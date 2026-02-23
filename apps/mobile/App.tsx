@@ -15,6 +15,8 @@ import Constants from 'expo-constants';
 import { createClient } from '@supabase/supabase-js';
 import { addPetSchema, linkTagSchema, loginSchema } from '@chipdog/shared';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
+import { Buffer } from 'buffer';
 
 type Screen = 'Login' | 'Home' | 'AddPet' | 'PetDetail' | 'LinkTag' | 'FoundTag' | 'FoundResult';
 
@@ -35,6 +37,14 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+const base64ToArrayBuffer = (base64: string) => {
+  const buf = Buffer.from(base64, 'base64');
+  return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+};
+
+// ✅ Evita errores de tipos (cacheDirectory / EncodingType) usando fallback
+const CACHE_DIR = (FileSystem as any).cacheDirectory ?? (FileSystem as any).documentDirectory ?? '';
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('Login');
@@ -123,18 +133,27 @@ export default function App() {
 
     if (result.canceled) return;
 
-    const uri = result.assets[0].uri;
+    let uri = result.assets[0].uri;
+
+    // ✅ Android: si viene content://, cópialo a cache para poder leerlo
+    if (uri.startsWith('content://')) {
+      const filename = `pet_${petId}_${Date.now()}.jpg`;
+      const dest = `${CACHE_DIR}${filename}`;
+      await FileSystem.copyAsync({ from: uri, to: dest });
+      uri = dest;
+    }
+
+    const path = `${user.id}/${petId}/main.jpg`;
 
     setLoading(true);
     try {
-      const resp = await fetch(uri);
-      const blob = await resp.blob();
+      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' as any });
+      const arrayBuffer = base64ToArrayBuffer(base64);
 
-      const path = `${user.id}/${petId}/main.jpg`;
-
-      const { error: upErr } = await supabase.storage
-        .from('pet-photos')
-        .upload(path, blob, { upsert: true, contentType: 'image/jpeg' });
+      const { error: upErr } = await supabase.storage.from('pet-photos').upload(path, arrayBuffer, {
+        upsert: true,
+        contentType: 'image/jpeg'
+      });
 
       if (upErr) {
         Alert.alert('Error subiendo foto', upErr.message);
@@ -151,7 +170,7 @@ export default function App() {
       Alert.alert('Foto actualizada ✅');
       await fetchPets();
 
-      // refrescar selectedPet desde el listado actualizado
+      // refrescar selectedPet desde el listado actualizado (best-effort)
       const updated = pets.find((p) => p.id === petId);
       if (updated && selectedPet?.id === petId) setSelectedPet(updated);
     } finally {
