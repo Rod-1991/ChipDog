@@ -14,8 +14,9 @@ import {
 import Constants from 'expo-constants';
 import { createClient } from '@supabase/supabase-js';
 import { addPetSchema, linkTagSchema, loginSchema } from '@chipdog/shared';
+import * as ImagePicker from 'expo-image-picker';
 
-type Screen = 'Login' | 'Home' | 'AddPet' | 'PetDetail' | 'LinkTag';
+type Screen = 'Login' | 'Home' | 'AddPet' | 'PetDetail' | 'LinkTag' | 'FoundTag' | 'FoundResult';
 
 type Pet = {
   id: number;
@@ -23,6 +24,7 @@ type Pet = {
   species: string;
   breed: string | null;
   is_lost: boolean;
+  photo_path?: string | null;
 };
 
 const supabaseUrl = Constants.expoConfig?.extra?.supabaseUrl;
@@ -41,6 +43,10 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [pets, setPets] = useState<Pet[]>([]);
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
+
+  // Found flow
+  const [foundCode, setFoundCode] = useState('');
+  const [foundPet, setFoundPet] = useState<any | null>(null);
 
   const [petForm, setPetForm] = useState({
     name: '',
@@ -64,29 +70,94 @@ export default function App() {
         return selectedPet ? `Detalle: ${selectedPet.name}` : 'Detalle';
       case 'LinkTag':
         return 'Vincular tag';
+      case 'FoundTag':
+        return 'Encontré una mascota';
+      case 'FoundResult':
+        return 'Mascota encontrada';
     }
   }, [screen, selectedPet]);
 
-const fetchPets = async () => {
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
+  const fetchPets = async () => {
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
 
-  if (!user) return;
+    if (!user) return;
 
-  const { data, error } = await supabase
-    .from('pets')
-    .select('id,name,species,breed,is_lost')
-    .eq('owner_id', user.id)
-    .order('created_at', { ascending: false });
+    const { data, error } = await supabase
+      .from('pets')
+      .select('id,name,species,breed,is_lost,photo_path')
+      .eq('owner_id', user.id)
+      .order('created_at', { ascending: false });
 
-  if (error) {
-    Alert.alert('Error listando mascotas', error.message);
-    return;
-  }
+    if (error) {
+      Alert.alert('Error listando mascotas', error.message);
+      return;
+    }
 
-  setPets((data as Pet[]) ?? []);
-};
+    setPets((data as Pet[]) ?? []);
+  };
+
+  // ✅ Subir foto a Supabase Storage y guardar photo_path en pets
+  const pickAndUploadPetPhoto = async (petId: number) => {
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      Alert.alert('Error', 'Usuario no autenticado');
+      return;
+    }
+
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permiso requerido', 'Necesitamos permiso para acceder a tu galería.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.8
+    });
+
+    if (result.canceled) return;
+
+    const uri = result.assets[0].uri;
+
+    setLoading(true);
+    try {
+      const resp = await fetch(uri);
+      const blob = await resp.blob();
+
+      const path = `${user.id}/${petId}/main.jpg`;
+
+      const { error: upErr } = await supabase.storage
+        .from('pet-photos')
+        .upload(path, blob, { upsert: true, contentType: 'image/jpeg' });
+
+      if (upErr) {
+        Alert.alert('Error subiendo foto', upErr.message);
+        return;
+      }
+
+      const { error: dbErr } = await supabase.from('pets').update({ photo_path: path }).eq('id', petId);
+
+      if (dbErr) {
+        Alert.alert('Error guardando foto', dbErr.message);
+        return;
+      }
+
+      Alert.alert('Foto actualizada ✅');
+      await fetchPets();
+
+      // refrescar selectedPet desde el listado actualizado
+      const updated = pets.find((p) => p.id === petId);
+      if (updated && selectedPet?.id === petId) setSelectedPet(updated);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // ✅ 1) Al iniciar: revisa si hay sesión y navega automáticamente
   // ✅ 2) Se suscribe a cambios de auth (login/logout)
@@ -101,7 +172,6 @@ const fetchPets = async () => {
         if (!mounted) return;
 
         if (error) {
-          // Si falla la lectura de sesión, cae a Login
           setScreen('Login');
           return;
         }
@@ -141,6 +211,32 @@ const fetchPets = async () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ✅ Public "Found tag" lookup (RPC)
+  const handleFoundLookup = async () => {
+    const code = foundCode.trim();
+    if (!code) {
+      Alert.alert('Ingresa el código del tag');
+      return;
+    }
+
+    setLoading(true);
+    const { data, error } = await supabase.rpc('get_pet_public_by_tag', { p_code: code });
+    setLoading(false);
+
+    if (error) {
+      Alert.alert('Error', error.message);
+      return;
+    }
+
+    if (!data || data.length === 0) {
+      Alert.alert('No encontrado', 'Este tag no está vinculado o la mascota no está marcada como perdida.');
+      return;
+    }
+
+    setFoundPet(data[0]);
+    setScreen('FoundResult');
+  };
+
   const handleLogin = async () => {
     const parsed = loginSchema.safeParse({ email, password });
     if (!parsed.success) {
@@ -157,7 +253,6 @@ const fetchPets = async () => {
       return;
     }
 
-    // El listener también lo haría, pero lo dejamos para respuesta inmediata
     await fetchPets();
     setScreen('Home');
   };
@@ -190,20 +285,20 @@ const fetchPets = async () => {
       return;
     }
 
-    setLoading(true);
     const {
-  data: { user }
-} = await supabase.auth.getUser();
+      data: { user }
+    } = await supabase.auth.getUser();
 
-if (!user) {
-  Alert.alert('Error', 'Usuario no autenticado');
-  return;
-}
+    if (!user) {
+      Alert.alert('Error', 'Usuario no autenticado');
+      return;
+    }
 
-const { error } = await supabase.from('pets').insert({
-  ...parsed.data,
-  owner_id: user.id
-});
+    setLoading(true);
+    const { error } = await supabase.from('pets').insert({
+      ...parsed.data,
+      owner_id: user.id
+    });
     setLoading(false);
 
     if (error) {
@@ -267,6 +362,48 @@ const { error } = await supabase.from('pets').insert({
             secureTextEntry
           />
           <Button title={loading ? 'Ingresando...' : 'Ingresar'} onPress={handleLogin} disabled={loading} />
+          <Button title="Encontré una mascota (escaneo tag)" onPress={() => setScreen('FoundTag')} />
+        </View>
+      );
+    }
+
+    if (screen === 'FoundTag') {
+      return (
+        <View style={styles.form}>
+          <Text style={{ fontWeight: '600' }}>Ingresa el código del tag</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Ej: 1234"
+            value={foundCode}
+            onChangeText={setFoundCode}
+            autoCapitalize="characters"
+          />
+          <Button title={loading ? 'Buscando...' : 'Buscar'} onPress={handleFoundLookup} disabled={loading} />
+          <Button title="Volver" onPress={() => setScreen('Login')} />
+        </View>
+      );
+    }
+
+    if (screen === 'FoundResult') {
+      return (
+        <View style={styles.form}>
+          {foundPet ? (
+            <>
+              <Text style={styles.detailName}>{foundPet.public_name}</Text>
+              <Text>Especie: {foundPet.species}</Text>
+              <Text>Raza: {foundPet.breed ?? 'N/D'}</Text>
+              <Text>Color: {foundPet.color ?? 'N/D'}</Text>
+
+              {foundPet.public_notes ? <Text>Info: {foundPet.public_notes}</Text> : null}
+              {foundPet.contact_phone ? <Text>Tel: {foundPet.contact_phone}</Text> : null}
+              {foundPet.contact_whatsapp ? <Text>WhatsApp: {foundPet.contact_whatsapp}</Text> : null}
+            </>
+          ) : (
+            <Text>No hay datos.</Text>
+          )}
+
+          <Button title="Buscar otro tag" onPress={() => setScreen('FoundTag')} />
+          <Button title="Volver" onPress={() => setScreen('Login')} />
         </View>
       );
     }
@@ -354,7 +491,13 @@ const { error } = await supabase.from('pets').insert({
               <Text style={styles.detailName}>{selectedPet.name}</Text>
               <Text>Especie: {selectedPet.species}</Text>
               <Text>Raza: {selectedPet.breed ?? 'N/D'}</Text>
+
               <Button title="Vincular tag" onPress={() => setScreen('LinkTag')} />
+              <Button
+                title={loading ? 'Subiendo...' : 'Subir foto'}
+                onPress={() => pickAndUploadPetPhoto(selectedPet.id)}
+                disabled={loading}
+              />
             </>
           ) : (
             <Text>No hay mascota seleccionada.</Text>
@@ -364,7 +507,7 @@ const { error } = await supabase.from('pets').insert({
       );
     }
 
-    // LinkTag
+    // LinkTag (default)
     return (
       <View style={styles.form}>
         <TextInput
