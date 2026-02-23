@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -67,14 +67,79 @@ export default function App() {
     }
   }, [screen, selectedPet]);
 
-  const fetchPets = async () => {
-    const { data, error } = await supabase.from('pets').select('id,name,species,breed,is_lost').order('created_at', { ascending: false });
-    if (error) {
-      Alert.alert('Error listando mascotas', error.message);
-      return;
-    }
-    setPets((data as Pet[]) ?? []);
-  };
+const fetchPets = async () => {
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  if (!user) return;
+
+  const { data, error } = await supabase
+    .from('pets')
+    .select('id,name,species,breed,is_lost')
+    .eq('owner_id', user.id)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    Alert.alert('Error listando mascotas', error.message);
+    return;
+  }
+
+  setPets((data as Pet[]) ?? []);
+};
+
+  // ✅ 1) Al iniciar: revisa si hay sesión y navega automáticamente
+  // ✅ 2) Se suscribe a cambios de auth (login/logout)
+  useEffect(() => {
+    let mounted = true;
+
+    const init = async () => {
+      try {
+        setLoading(true);
+
+        const { data, error } = await supabase.auth.getSession();
+        if (!mounted) return;
+
+        if (error) {
+          // Si falla la lectura de sesión, cae a Login
+          setScreen('Login');
+          return;
+        }
+
+        if (data.session) {
+          await fetchPets();
+          if (!mounted) return;
+          setScreen('Home');
+        } else {
+          setScreen('Login');
+        }
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    init();
+
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!mounted) return;
+
+      if (session) {
+        await fetchPets();
+        if (!mounted) return;
+        setScreen('Home');
+      } else {
+        setPets([]);
+        setSelectedPet(null);
+        setScreen('Login');
+      }
+    });
+
+    return () => {
+      mounted = false;
+      sub.subscription.unsubscribe();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleLogin = async () => {
     const parsed = loginSchema.safeParse({ email, password });
@@ -92,8 +157,26 @@ export default function App() {
       return;
     }
 
+    // El listener también lo haría, pero lo dejamos para respuesta inmediata
     await fetchPets();
     setScreen('Home');
+  };
+
+  const handleLogout = async () => {
+    setLoading(true);
+    const { error } = await supabase.auth.signOut();
+    setLoading(false);
+
+    if (error) {
+      Alert.alert('Error cerrando sesión', error.message);
+      return;
+    }
+
+    setPets([]);
+    setSelectedPet(null);
+    setEmail('');
+    setPassword('');
+    setScreen('Login');
   };
 
   const handleCreatePet = async () => {
@@ -108,7 +191,19 @@ export default function App() {
     }
 
     setLoading(true);
-    const { error } = await supabase.from('pets').insert(parsed.data);
+    const {
+  data: { user }
+} = await supabase.auth.getUser();
+
+if (!user) {
+  Alert.alert('Error', 'Usuario no autenticado');
+  return;
+}
+
+const { error } = await supabase.from('pets').insert({
+  ...parsed.data,
+  owner_id: user.id
+});
     setLoading(false);
 
     if (error) {
@@ -135,7 +230,11 @@ export default function App() {
     }
 
     setLoading(true);
-    const { error } = await supabase.from('tags').update({ pet_id: selectedPet.id, status: 'linked' }).eq('code', parsed.data.code).is('pet_id', null);
+    const { error } = await supabase
+      .from('tags')
+      .update({ pet_id: selectedPet.id, status: 'linked' })
+      .eq('code', parsed.data.code)
+      .is('pet_id', null);
     setLoading(false);
 
     if (error) {
@@ -152,8 +251,21 @@ export default function App() {
     if (screen === 'Login') {
       return (
         <View style={styles.form}>
-          <TextInput value={email} onChangeText={setEmail} style={styles.input} placeholder="Email" autoCapitalize="none" keyboardType="email-address" />
-          <TextInput value={password} onChangeText={setPassword} style={styles.input} placeholder="Contraseña" secureTextEntry />
+          <TextInput
+            value={email}
+            onChangeText={setEmail}
+            style={styles.input}
+            placeholder="Email"
+            autoCapitalize="none"
+            keyboardType="email-address"
+          />
+          <TextInput
+            value={password}
+            onChangeText={setPassword}
+            style={styles.input}
+            placeholder="Contraseña"
+            secureTextEntry
+          />
           <Button title={loading ? 'Ingresando...' : 'Ingresar'} onPress={handleLogin} disabled={loading} />
         </View>
       );
@@ -162,8 +274,10 @@ export default function App() {
     if (screen === 'Home') {
       return (
         <View style={styles.form}>
+          <Button title="Cerrar sesión" onPress={handleLogout} />
           <Button title="Nueva mascota" onPress={() => setScreen('AddPet')} />
           <Button title="Refrescar" onPress={fetchPets} />
+
           {pets.map((pet) => (
             <TouchableOpacity
               key={pet.id}
@@ -174,7 +288,10 @@ export default function App() {
               style={styles.card}
             >
               <Text style={styles.cardTitle}>{pet.name}</Text>
-              <Text>{pet.species}{pet.breed ? ` · ${pet.breed}` : ''}</Text>
+              <Text>
+                {pet.species}
+                {pet.breed ? ` · ${pet.breed}` : ''}
+              </Text>
               <Text>{pet.is_lost ? 'Perdido' : 'En casa'}</Text>
             </TouchableOpacity>
           ))}
@@ -185,12 +302,44 @@ export default function App() {
     if (screen === 'AddPet') {
       return (
         <View style={styles.form}>
-          <TextInput style={styles.input} placeholder="Nombre" value={petForm.name} onChangeText={(v) => setPetForm((p) => ({ ...p, name: v }))} />
-          <TextInput style={styles.input} placeholder="Especie" value={petForm.species} onChangeText={(v) => setPetForm((p) => ({ ...p, species: v }))} />
-          <TextInput style={styles.input} placeholder="Raza" value={petForm.breed} onChangeText={(v) => setPetForm((p) => ({ ...p, breed: v }))} />
-          <TextInput style={styles.input} placeholder="Color" value={petForm.color} onChangeText={(v) => setPetForm((p) => ({ ...p, color: v }))} />
-          <TextInput style={styles.input} placeholder="Año nacimiento" keyboardType="number-pad" value={petForm.birth_year} onChangeText={(v) => setPetForm((p) => ({ ...p, birth_year: v }))} />
-          <TextInput style={styles.input} placeholder="URL foto" value={petForm.photo_url} onChangeText={(v) => setPetForm((p) => ({ ...p, photo_url: v }))} autoCapitalize="none" />
+          <TextInput
+            style={styles.input}
+            placeholder="Nombre"
+            value={petForm.name}
+            onChangeText={(v) => setPetForm((p) => ({ ...p, name: v }))}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Especie"
+            value={petForm.species}
+            onChangeText={(v) => setPetForm((p) => ({ ...p, species: v }))}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Raza"
+            value={petForm.breed}
+            onChangeText={(v) => setPetForm((p) => ({ ...p, breed: v }))}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Color"
+            value={petForm.color}
+            onChangeText={(v) => setPetForm((p) => ({ ...p, color: v }))}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Año nacimiento"
+            keyboardType="number-pad"
+            value={petForm.birth_year}
+            onChangeText={(v) => setPetForm((p) => ({ ...p, birth_year: v }))}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="URL foto"
+            value={petForm.photo_url}
+            onChangeText={(v) => setPetForm((p) => ({ ...p, photo_url: v }))}
+            autoCapitalize="none"
+          />
           <Button title={loading ? 'Guardando...' : 'Guardar mascota'} onPress={handleCreatePet} disabled={loading} />
           <Button title="Volver" onPress={() => setScreen('Home')} />
         </View>
@@ -215,9 +364,16 @@ export default function App() {
       );
     }
 
+    // LinkTag
     return (
       <View style={styles.form}>
-        <TextInput style={styles.input} placeholder="Código tag" value={tagCode} onChangeText={setTagCode} autoCapitalize="characters" />
+        <TextInput
+          style={styles.input}
+          placeholder="Código tag"
+          value={tagCode}
+          onChangeText={setTagCode}
+          autoCapitalize="characters"
+        />
         <Button title={loading ? 'Vinculando...' : 'Confirmar vínculo'} onPress={handleLinkTag} disabled={loading} />
         <Button title="Cancelar" onPress={() => setScreen('PetDetail')} />
       </View>
