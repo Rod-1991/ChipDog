@@ -3,3 +3,4 @@ node_modules
 apps/mobile/.env
 apps/mobile/.expo
 packages/shared/dist
+.expo/
