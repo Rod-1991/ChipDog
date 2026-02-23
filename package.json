@@ -1,0 +1,12 @@
+{
+  "name": "chipdog",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "typecheck": "npm run -w @chipdog/shared build && npm run -w @chipdog/mobile typecheck"
+  }
+}

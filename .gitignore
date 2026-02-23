@@ -1,0 +1,5 @@
+node_modules
+.env
+apps/mobile/.env
+apps/mobile/.expo
+packages/shared/dist

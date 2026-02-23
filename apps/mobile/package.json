@@ -1,0 +1,25 @@
+{
+  "name": "@chipdog/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "main": "node_modules/expo/AppEntry.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@chipdog/shared": "0.1.0",
+    "@supabase/supabase-js": "^2.48.1",
+    "expo": "~52.0.33",
+    "expo-constants": "~17.0.6",
+    "react": "18.3.1",
+    "react-native": "0.76.7"
+  },
+  "devDependencies": {
+    "@types/react": "~18.3.12",
+    "typescript": "^5.7.3"
+  }
+}
