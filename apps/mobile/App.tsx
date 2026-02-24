@@ -9,13 +9,13 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
+  Image
 } from 'react-native';
 import Constants from 'expo-constants';
 import { createClient } from '@supabase/supabase-js';
 import { addPetSchema, linkTagSchema, loginSchema } from '@chipdog/shared';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
 import { Buffer } from 'buffer';
 
 type Screen = 'Login' | 'Home' | 'AddPet' | 'PetDetail' | 'LinkTag' | 'FoundTag' | 'FoundResult';
@@ -38,21 +38,17 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-const base64ToArrayBuffer = (base64: string) => {
-  const buf = Buffer.from(base64, 'base64');
-  return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-};
-
-// ✅ Evita errores de tipos (cacheDirectory / EncodingType) usando fallback
-const CACHE_DIR = (FileSystem as any).cacheDirectory ?? (FileSystem as any).documentDirectory ?? '';
-
 export default function App() {
   const [screen, setScreen] = useState<Screen>('Login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+
   const [pets, setPets] = useState<Pet[]>([]);
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
+
+  // Signed URL para mostrar foto (bucket privado)
+  const [petPhotoSignedUrl, setPetPhotoSignedUrl] = useState<string | null>(null);
 
   // Found flow
   const [foundCode, setFoundCode] = useState('');
@@ -66,6 +62,7 @@ export default function App() {
     birth_year: '',
     photo_url: ''
   });
+
   const [tagCode, setTagCode] = useState('');
 
   const title = useMemo(() => {
@@ -108,70 +105,107 @@ export default function App() {
     setPets((data as Pet[]) ?? []);
   };
 
+  const loadSelectedPetPhoto = async (photoPath?: string | null) => {
+    if (!photoPath) {
+      setPetPhotoSignedUrl(null);
+      return;
+    }
+
+    const { data, error } = await supabase.storage.from('pet-photos').createSignedUrl(photoPath, 60 * 60); // 1 hora
+
+    if (error) {
+      console.log('signedUrl error', error.message);
+      setPetPhotoSignedUrl(null);
+      return;
+    }
+
+    setPetPhotoSignedUrl(data.signedUrl);
+  };
+
   // ✅ Subir foto a Supabase Storage y guardar photo_path en pets
-const pickAndUploadPetPhoto = async (petId: number) => {
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
+  const pickAndUploadPetPhoto = async (petId: number) => {
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
 
-  if (!user) {
-    Alert.alert('Error', 'Usuario no autenticado');
-    return;
-  }
+    if (!user) {
+      Alert.alert('Error', 'Usuario no autenticado');
+      return;
+    }
 
-  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!perm.granted) {
-    Alert.alert('Permiso requerido', 'Necesitamos permiso para acceder a tu galería.');
-    return;
-  }
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permiso requerido', 'Necesitamos permiso para acceder a tu galería.');
+      return;
+    }
 
-  const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ImagePicker.MediaTypeOptions.Images,
-    allowsEditing: true,
-    quality: 0.8,
-    base64: true // ✅ CLAVE: trae la imagen en base64
-  });
-
-  if (result.canceled) return;
-
-  const asset = result.assets[0];
-  const b64 = asset.base64;
-
-  if (!b64) {
-    Alert.alert('Error', 'No se pudo leer la imagen (base64 vacío). Prueba otra foto.');
-    return;
-  }
-
-  // ✅ convertir base64 -> bytes (Uint8Array)
-  const bytes = Buffer.from(b64, 'base64');
-  const uint8 = new Uint8Array(bytes);
-
-  const path = `${user.id}/${petId}/main.jpg`;
-
-  setLoading(true);
-  try {
-    const { error: upErr } = await supabase.storage.from('pet-photos').upload(path, uint8, {
-      upsert: true,
-      contentType: 'image/jpeg'
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: [ImagePicker.MediaType.Image],
+      allowsEditing: true,
+      quality: 0.8,
+      base64: true
     });
 
-    if (upErr) {
-      Alert.alert('Error subiendo foto', upErr.message);
+    if (result.canceled) return;
+
+    const asset = result.assets[0];
+    const b64 = asset.base64;
+
+    if (!b64) {
+      Alert.alert('Error', 'No se pudo leer la imagen (base64 vacío). Prueba otra foto.');
       return;
     }
 
-    const { error: dbErr } = await supabase.from('pets').update({ photo_path: path }).eq('id', petId);
-    if (dbErr) {
-      Alert.alert('Error guardando foto', dbErr.message);
-      return;
-    }
+    // base64 -> Uint8Array
+    const bytes = Buffer.from(b64, 'base64');
+    const uint8 = new Uint8Array(bytes);
 
-    Alert.alert('Foto actualizada ✅');
-    await fetchPets();
-  } finally {
-    setLoading(false);
-  }
-};
+    const path = `${user.id}/${petId}/main.jpg`;
+
+    setLoading(true);
+    try {
+      const { error: upErr } = await supabase.storage.from('pet-photos').upload(path, uint8, {
+        upsert: true,
+        contentType: 'image/jpeg'
+      });
+
+      if (upErr) {
+        Alert.alert('Error subiendo foto', upErr.message);
+        return;
+      }
+
+      const { data: updatedRows, error: dbErr } = await supabase
+        .from('pets')
+        .update({ photo_path: path })
+        .eq('id', petId)
+        .select('id,photo_path');
+
+      if (dbErr) {
+        Alert.alert('Error guardando foto', dbErr.message);
+        return;
+      }
+
+      const updated = updatedRows?.[0];
+      if (!updated) {
+        Alert.alert('Error', 'No se pudo actualizar la mascota (0 filas). Revisa RLS/policies.');
+        return;
+      }
+
+      Alert.alert('Foto actualizada ✅');
+      await fetchPets();
+
+      // Refresca selectedPet + signedUrl
+      if (selectedPet?.id === petId) {
+        const merged: Pet = { ...selectedPet, photo_path: updated.photo_path };
+        setSelectedPet(merged);
+        await loadSelectedPetPhoto(updated.photo_path ?? null);
+      } else {
+        await loadSelectedPetPhoto(updated.photo_path ?? null);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // ✅ 1) Al iniciar: revisa si hay sesión y navega automáticamente
   // ✅ 2) Se suscribe a cambios de auth (login/logout)
@@ -214,6 +248,7 @@ const pickAndUploadPetPhoto = async (petId: number) => {
       } else {
         setPets([]);
         setSelectedPet(null);
+        setPetPhotoSignedUrl(null);
         setScreen('Login');
       }
     });
@@ -283,6 +318,7 @@ const pickAndUploadPetPhoto = async (petId: number) => {
 
     setPets([]);
     setSelectedPet(null);
+    setPetPhotoSignedUrl(null);
     setEmail('');
     setPassword('');
     setScreen('Login');
@@ -432,8 +468,9 @@ const pickAndUploadPetPhoto = async (petId: number) => {
           {pets.map((pet) => (
             <TouchableOpacity
               key={pet.id}
-              onPress={() => {
+              onPress={async () => {
                 setSelectedPet(pet);
+                await loadSelectedPetPhoto(pet.photo_path ?? null);
                 setScreen('PetDetail');
               }}
               style={styles.card}
@@ -486,7 +523,7 @@ const pickAndUploadPetPhoto = async (petId: number) => {
           />
           <TextInput
             style={styles.input}
-            placeholder="URL foto"
+            placeholder="URL foto (opcional)"
             value={petForm.photo_url}
             onChangeText={(v) => setPetForm((p) => ({ ...p, photo_url: v }))}
             autoCapitalize="none"
@@ -506,6 +543,20 @@ const pickAndUploadPetPhoto = async (petId: number) => {
               <Text>Especie: {selectedPet.species}</Text>
               <Text>Raza: {selectedPet.breed ?? 'N/D'}</Text>
 
+              <Text style={{ marginTop: 8, color: '#64748b' }}>
+                photo_path: {selectedPet.photo_path ?? '(vacío)'}
+              </Text>
+
+              {petPhotoSignedUrl ? (
+                <Image
+                  source={{ uri: petPhotoSignedUrl }}
+                  style={{ width: 220, height: 220, borderRadius: 12, marginTop: 12 }}
+                  resizeMode="cover"
+                />
+              ) : (
+                <Text style={{ marginTop: 8, color: '#64748b' }}>Sin foto aún</Text>
+              )}
+
               <Button title="Vincular tag" onPress={() => setScreen('LinkTag')} />
               <Button
                 title={loading ? 'Subiendo...' : 'Subir foto'}
@@ -516,6 +567,7 @@ const pickAndUploadPetPhoto = async (petId: number) => {
           ) : (
             <Text>No hay mascota seleccionada.</Text>
           )}
+
           <Button title="Volver" onPress={() => setScreen('Home')} />
         </View>
       );
