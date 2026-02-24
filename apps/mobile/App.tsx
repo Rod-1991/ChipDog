@@ -109,74 +109,69 @@ export default function App() {
   };
 
   // ✅ Subir foto a Supabase Storage y guardar photo_path en pets
-  const pickAndUploadPetPhoto = async (petId: number) => {
-    const {
-      data: { user }
-    } = await supabase.auth.getUser();
+const pickAndUploadPetPhoto = async (petId: number) => {
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
 
-    if (!user) {
-      Alert.alert('Error', 'Usuario no autenticado');
-      return;
-    }
+  if (!user) {
+    Alert.alert('Error', 'Usuario no autenticado');
+    return;
+  }
 
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert('Permiso requerido', 'Necesitamos permiso para acceder a tu galería.');
-      return;
-    }
+  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!perm.granted) {
+    Alert.alert('Permiso requerido', 'Necesitamos permiso para acceder a tu galería.');
+    return;
+  }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      quality: 0.8
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    allowsEditing: true,
+    quality: 0.8,
+    base64: true // ✅ CLAVE: trae la imagen en base64
+  });
+
+  if (result.canceled) return;
+
+  const asset = result.assets[0];
+  const b64 = asset.base64;
+
+  if (!b64) {
+    Alert.alert('Error', 'No se pudo leer la imagen (base64 vacío). Prueba otra foto.');
+    return;
+  }
+
+  // ✅ convertir base64 -> bytes (Uint8Array)
+  const bytes = Buffer.from(b64, 'base64');
+  const uint8 = new Uint8Array(bytes);
+
+  const path = `${user.id}/${petId}/main.jpg`;
+
+  setLoading(true);
+  try {
+    const { error: upErr } = await supabase.storage.from('pet-photos').upload(path, uint8, {
+      upsert: true,
+      contentType: 'image/jpeg'
     });
 
-    if (result.canceled) return;
-
-    let uri = result.assets[0].uri;
-
-    // ✅ Android: si viene content://, cópialo a cache para poder leerlo
-    if (uri.startsWith('content://')) {
-      const filename = `pet_${petId}_${Date.now()}.jpg`;
-      const dest = `${CACHE_DIR}${filename}`;
-      await FileSystem.copyAsync({ from: uri, to: dest });
-      uri = dest;
+    if (upErr) {
+      Alert.alert('Error subiendo foto', upErr.message);
+      return;
     }
 
-    const path = `${user.id}/${petId}/main.jpg`;
-
-    setLoading(true);
-    try {
-      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' as any });
-      const arrayBuffer = base64ToArrayBuffer(base64);
-
-      const { error: upErr } = await supabase.storage.from('pet-photos').upload(path, arrayBuffer, {
-        upsert: true,
-        contentType: 'image/jpeg'
-      });
-
-      if (upErr) {
-        Alert.alert('Error subiendo foto', upErr.message);
-        return;
-      }
-
-      const { error: dbErr } = await supabase.from('pets').update({ photo_path: path }).eq('id', petId);
-
-      if (dbErr) {
-        Alert.alert('Error guardando foto', dbErr.message);
-        return;
-      }
-
-      Alert.alert('Foto actualizada ✅');
-      await fetchPets();
-
-      // refrescar selectedPet desde el listado actualizado (best-effort)
-      const updated = pets.find((p) => p.id === petId);
-      if (updated && selectedPet?.id === petId) setSelectedPet(updated);
-    } finally {
-      setLoading(false);
+    const { error: dbErr } = await supabase.from('pets').update({ photo_path: path }).eq('id', petId);
+    if (dbErr) {
+      Alert.alert('Error guardando foto', dbErr.message);
+      return;
     }
-  };
+
+    Alert.alert('Foto actualizada ✅');
+    await fetchPets();
+  } finally {
+    setLoading(false);
+  }
+};
 
   // ✅ 1) Al iniciar: revisa si hay sesión y navega automáticamente
   // ✅ 2) Se suscribe a cambios de auth (login/logout)
