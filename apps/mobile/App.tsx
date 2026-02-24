@@ -1,3 +1,4 @@
+import React from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -18,6 +19,9 @@ import { addPetSchema, linkTagSchema, loginSchema } from '@chipdog/shared';
 import * as ImagePicker from 'expo-image-picker';
 import { Buffer } from 'buffer';
 
+// Buffer polyfill (RN / Expo)
+(global as any).Buffer = (global as any).Buffer || Buffer;
+
 type Screen = 'Login' | 'Home' | 'AddPet' | 'PetDetail' | 'LinkTag' | 'FoundTag' | 'FoundResult';
 
 type Pet = {
@@ -29,8 +33,24 @@ type Pet = {
   photo_path?: string | null;
 };
 
-const supabaseUrl = Constants.expoConfig?.extra?.supabaseUrl;
-const supabaseAnonKey = Constants.expoConfig?.extra?.supabaseAnonKey;
+type Extra = {
+  supabaseUrl: string;
+  supabaseAnonKey: string;
+};
+
+type FoundPetPublic = {
+  public_name: string;
+  species: string;
+  breed: string | null;
+  color: string | null;
+  public_notes?: string | null;
+  contact_phone?: string | null;
+  contact_whatsapp?: string | null;
+};
+
+const extra = (Constants.expoConfig?.extra ?? {}) as Partial<Extra>;
+const supabaseUrl = extra.supabaseUrl;
+const supabaseAnonKey = extra.supabaseAnonKey;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Faltan SUPABASE_URL o SUPABASE_ANON_KEY en app.config.ts');
@@ -52,7 +72,7 @@ export default function App() {
 
   // Found flow
   const [foundCode, setFoundCode] = useState('');
-  const [foundPet, setFoundPet] = useState<any | null>(null);
+  const [foundPet, setFoundPet] = useState<FoundPetPublic | null>(null);
 
   const [petForm, setPetForm] = useState({
     name: '',
@@ -111,7 +131,7 @@ export default function App() {
       return;
     }
 
-    const { data, error } = await supabase.storage.from('pet-photos').createSignedUrl(photoPath, 60 * 60); // 1 hora
+    const { data, error } = await supabase.storage.from('pet-photos').createSignedUrl(photoPath, 60 * 60);
 
     if (error) {
       console.log('signedUrl error', error.message);
@@ -122,7 +142,6 @@ export default function App() {
     setPetPhotoSignedUrl(data.signedUrl);
   };
 
-  // ✅ Subir foto a Supabase Storage y guardar photo_path en pets
   const pickAndUploadPetPhoto = async (petId: number) => {
     const {
       data: { user }
@@ -140,7 +159,7 @@ export default function App() {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: [ImagePicker.MediaType.Image],
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       quality: 0.8,
       base64: true
@@ -156,10 +175,8 @@ export default function App() {
       return;
     }
 
-    // base64 -> Uint8Array
     const bytes = Buffer.from(b64, 'base64');
     const uint8 = new Uint8Array(bytes);
-
     const path = `${user.id}/${petId}/main.jpg`;
 
     setLoading(true);
@@ -185,7 +202,7 @@ export default function App() {
         return;
       }
 
-      const updated = updatedRows?.[0];
+      const updated = updatedRows?.[0] as { id: number; photo_path: string | null } | undefined;
       if (!updated) {
         Alert.alert('Error', 'No se pudo actualizar la mascota (0 filas). Revisa RLS/policies.');
         return;
@@ -194,7 +211,6 @@ export default function App() {
       Alert.alert('Foto actualizada ✅');
       await fetchPets();
 
-      // Refresca selectedPet + signedUrl
       if (selectedPet?.id === petId) {
         const merged: Pet = { ...selectedPet, photo_path: updated.photo_path };
         setSelectedPet(merged);
@@ -207,8 +223,6 @@ export default function App() {
     }
   };
 
-  // ✅ 1) Al iniciar: revisa si hay sesión y navega automáticamente
-  // ✅ 2) Se suscribe a cambios de auth (login/logout)
   useEffect(() => {
     let mounted = true;
 
@@ -257,10 +271,8 @@ export default function App() {
       mounted = false;
       sub.subscription.unsubscribe();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ✅ Public "Found tag" lookup (RPC)
   const handleFoundLookup = async () => {
     const code = foundCode.trim();
     if (!code) {
@@ -282,7 +294,7 @@ export default function App() {
       return;
     }
 
-    setFoundPet(data[0]);
+    setFoundPet(data[0] as FoundPetPublic);
     setScreen('FoundResult');
   };
 

@@ -2,7 +2,7 @@
   "name": "@chipdog/mobile",
   "version": "0.1.0",
   "private": true,
-  "main": "/index.js",
+  "main": "index.js",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
@@ -11,10 +11,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@chipdog/shared": "0.1.0",
+    "@chipdog/shared": "file:../../packages/shared",
     "@supabase/supabase-js": "^2.48.1",
-    "babel-preset-expo": "~54.0.10",
-    "expo": "~54",
+    "dotenv": "^17.3.1",
+    "expo": "^54.0.33",
+    "expo-asset": "~12.0.12",
     "expo-constants": "~18.0.13",
     "expo-file-system": "~19.0.21",
     "expo-image-picker": "~17.0.10",
@@ -22,7 +23,6 @@
     "react-native": "0.81.5"
   },
   "devDependencies": {
-    "@types/react": "~19.1.10",
     "typescript": "^5.7.3"
   }
 }
