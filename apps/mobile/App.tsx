@@ -155,7 +155,7 @@ export default function App() {
     const { data, error } = await supabase
       .from('pets')
       .select('id,name,species,breed,is_lost,photo_url')
-      .eq('owner_profile_id', user.id)
+      .eq('owner_id', user.id)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -197,7 +197,7 @@ export default function App() {
           'id,name,species,breed,is_lost,photo_url,color,birth_year,sex,weight_kg,owner_phone,owner_whatsapp,public_notes,allergies,medications,conditions,vet_name,vet_phone'
         )
         .eq('id', petId)
-        .eq('owner_profile_id', user.id)
+        .eq('owner_id', user.id)
         .single();
 
       if (error) {
@@ -514,7 +514,7 @@ export default function App() {
     setLoading(true);
     const { error } = await supabase.from('pets').insert({
       ...parsed.data,
-      owner_profile_id: user.id
+      owner_id: user.id
     });
     setLoading(false);
 
