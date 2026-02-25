@@ -28,7 +28,7 @@ type Pet = {
   species: string;
   breed: string | null;
   is_lost: boolean;
-  photo_path?: string | null;
+  photo_url?: string | null;
 
   color?: string | null;
   birth_year?: number | null;
@@ -154,8 +154,8 @@ export default function App() {
 
     const { data, error } = await supabase
       .from('pets')
-      .select('id,name,species,breed,is_lost,photo_path')
-      .eq('owner_id', user.id)
+      .select('id,name,species,breed,is_lost,photo_url')
+      .eq('owner_profile_id', user.id)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -194,10 +194,10 @@ export default function App() {
       const { data, error } = await supabase
         .from('pets')
         .select(
-          'id,name,species,breed,is_lost,photo_path,color,birth_year,sex,weight_kg,owner_phone,owner_whatsapp,public_notes,allergies,medications,conditions,vet_name,vet_phone'
+          'id,name,species,breed,is_lost,photo_url,color,birth_year,sex,weight_kg,owner_phone,owner_whatsapp,public_notes,allergies,medications,conditions,vet_name,vet_phone'
         )
         .eq('id', petId)
-        .eq('owner_id', user.id)
+        .eq('owner_profile_id', user.id)
         .single();
 
       if (error) {
@@ -224,7 +224,7 @@ export default function App() {
         vet_phone: pet.vet_phone ?? ''
       });
 
-      await loadSelectedPetPhoto(pet.photo_path ?? null);
+      await loadSelectedPetPhoto(pet.photo_url ?? null);
     } finally {
       setLoading(false);
     }
@@ -285,7 +285,7 @@ export default function App() {
         .update(payload)
         .eq('id', selectedPet.id)
         .select(
-          'id,name,species,breed,is_lost,photo_path,color,birth_year,sex,weight_kg,owner_phone,owner_whatsapp,public_notes,allergies,medications,conditions,vet_name,vet_phone'
+          'id,name,species,breed,is_lost,photo_url,color,birth_year,sex,weight_kg,owner_phone,owner_whatsapp,public_notes,allergies,medications,conditions,vet_name,vet_phone'
         )
         .single();
 
@@ -355,9 +355,9 @@ export default function App() {
 
       const { data: updatedRow, error: dbErr } = await supabase
         .from('pets')
-        .update({ photo_path: path })
+        .update({ photo_url: path })
         .eq('id', petId)
-        .select('id,photo_path')
+        .select('id,photo_url')
         .single();
 
       if (dbErr) {
@@ -367,8 +367,8 @@ export default function App() {
 
       Alert.alert('Foto actualizada ✅');
 
-      setSelectedPet((p) => (p ? { ...p, photo_path: updatedRow.photo_path } : p));
-      await loadSelectedPetPhoto(updatedRow.photo_path ?? null);
+      setSelectedPet((p) => (p ? { ...p, photo_url: updatedRow.photo_url } : p));
+      await loadSelectedPetPhoto(updatedRow.photo_url ?? null);
       await fetchPets();
     } finally {
       setLoading(false);
@@ -514,7 +514,7 @@ export default function App() {
     setLoading(true);
     const { error } = await supabase.from('pets').insert({
       ...parsed.data,
-      owner_id: user.id
+      owner_profile_id: user.id
     });
     setLoading(false);
 
