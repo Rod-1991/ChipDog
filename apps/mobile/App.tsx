@@ -717,8 +717,7 @@ export default function App() {
           <TouchableOpacity style={styles.addPetCta} onPress={() => setScreen('AddPet')}>
             <Text style={styles.addPetCtaText}>+ Agregar Mascota</Text>
           </TouchableOpacity>
-          <Button title="Nueva mascota" onPress={() => setScreen('AddPet')} />
-
+          
           {pets.map((pet) => (
             <TouchableOpacity
               key={pet.id}
