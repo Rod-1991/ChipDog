@@ -146,7 +146,8 @@ export default function App() {
   const [showBirthCalendar, setShowBirthCalendar] = useState(false);
   const [calendarMonthDate, setCalendarMonthDate] = useState(() => new Date());
 
-  const [tagCode, setTagCode] = useState('');
+  const [qrTagCode, setQrTagCode] = useState('');
+  const [nfcTagCode, setNfcTagCode] = useState('');
 
   const title = useMemo(() => {
     switch (screen) {
@@ -584,13 +585,13 @@ export default function App() {
     setScreen('Home');
   };
 
-  const handleLinkTag = async () => {
+  const handleLinkTag = async (code: string, sourceLabel: 'QR' | 'NFC') => {
     if (!selectedPet) {
       Alert.alert('Selecciona una mascota primero');
       return;
     }
 
-    const parsed = linkTagSchema.safeParse({ code: tagCode });
+    const parsed = linkTagSchema.safeParse({ code });
     if (!parsed.success) {
       Alert.alert('Validación', parsed.error.errors[0]?.message ?? 'Código inválido');
       return;
@@ -609,8 +610,14 @@ export default function App() {
       return;
     }
 
-    Alert.alert('Tag vinculado');
-    setTagCode('');
+    Alert.alert('Tag vinculado', `La placa quedó asociada vía lector ${sourceLabel}.`);
+
+    if (sourceLabel === 'QR') {
+      setQrTagCode('');
+    } else {
+      setNfcTagCode('');
+    }
+
     setScreen('PetDetail');
   };
 
@@ -1124,14 +1131,42 @@ export default function App() {
 
     return (
       <View style={styles.form}>
-        <TextInput
-          style={styles.input}
-          placeholder="Código tag"
-          value={tagCode}
-          onChangeText={setTagCode}
-          autoCapitalize="characters"
-        />
-        <Button title={loading ? 'Vinculando...' : 'Confirmar vínculo'} onPress={handleLinkTag} disabled={loading} />
+        <Card title="Vinculación por lector QR">
+          <Text style={styles.linkMethodText}>
+            Escanea el QR de la placa o pega el código leído por el lector.
+          </Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Código leído por QR"
+            value={qrTagCode}
+            onChangeText={setQrTagCode}
+            autoCapitalize="characters"
+          />
+          <Button
+            title={loading ? 'Vinculando...' : 'Confirmar vínculo por QR'}
+            onPress={() => handleLinkTag(qrTagCode, 'QR')}
+            disabled={loading}
+          />
+        </Card>
+
+        <Card title="Vinculación por lector NFC">
+          <Text style={styles.linkMethodText}>
+            Acerca la placa al lector NFC y confirma con el código detectado.
+          </Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Código leído por NFC"
+            value={nfcTagCode}
+            onChangeText={setNfcTagCode}
+            autoCapitalize="characters"
+          />
+          <Button
+            title={loading ? 'Vinculando...' : 'Confirmar vínculo por NFC'}
+            onPress={() => handleLinkTag(nfcTagCode, 'NFC')}
+            disabled={loading}
+          />
+        </Card>
+
         <Button title="Cancelar" onPress={() => setScreen('PetDetail')} />
       </View>
     );
@@ -1341,6 +1376,8 @@ const styles = StyleSheet.create({
 
   backBtn: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0' },
   backBtnText: { color: '#0f172a', fontWeight: '900' },
+
+  linkMethodText: { color: '#334155', lineHeight: 20 },
 
   detailName: { fontSize: 22, fontWeight: '700' }
 });
