@@ -55,10 +55,18 @@ O en proyecto remoto:
 supabase db push
 ```
 
-## Ejecutar la app mobile
+## Ejecutar la app
+
+Mobile (Expo Go / simulador):
 
 ```bash
 npm run -w @chipdog/mobile start
+```
+
+Web (Expo Web):
+
+```bash
+npm run web
 ```
 
 ## Flujo implementado
@@ -74,4 +82,5 @@ npm run -w @chipdog/mobile start
 ```bash
 npm run typecheck
 npm run -w @chipdog/mobile start
+npm run web
 ```
