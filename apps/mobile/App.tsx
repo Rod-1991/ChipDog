@@ -92,6 +92,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
 
   const [pets, setPets] = useState<Pet[]>([]);
+  const [petSignedUrls, setPetSignedUrls] = useState<Record<number, string | null>>({});
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
 
   const [petPhotoSignedUrl, setPetPhotoSignedUrl] = useState<string | null>(null);
@@ -163,7 +164,35 @@ export default function App() {
       return;
     }
 
-    setPets((data as Pet[]) ?? []);
+    const nextPets = (data as Pet[]) ?? [];
+    setPets(nextPets);
+    await loadHomePetPhotos(nextPets);
+  };
+
+  const loadHomePetPhotos = async (petsToResolve: Pet[]) => {
+    if (!petsToResolve.length) {
+      setPetSignedUrls({});
+      return;
+    }
+
+    const resolvedEntries = await Promise.all(
+      petsToResolve.map(async (pet) => {
+        if (!pet.photo_url) {
+          return [pet.id, null] as const;
+        }
+
+        const { data, error } = await supabase.storage.from('pet-photos').createSignedUrl(pet.photo_url, 60 * 60);
+
+        if (error) {
+          console.log('signedUrl home error', error.message);
+          return [pet.id, null] as const;
+        }
+
+        return [pet.id, data.signedUrl] as const;
+      })
+    );
+
+    setPetSignedUrls(Object.fromEntries(resolvedEntries));
   };
 
   const loadSelectedPetPhoto = async (photoPath?: string | null) => {
@@ -653,9 +682,13 @@ export default function App() {
     if (screen === 'Home') {
       return (
         <View style={styles.form}>
-          <Button title="Cerrar sesión" onPress={handleLogout} />
+          <View style={styles.homeHeader}>
+            <Text style={styles.homeHeaderEyebrow}>Donde Está Mi Mascota</Text>
+            <Text style={styles.homeHeaderTitle}>Mis mascotas</Text>
+            <Text style={styles.homeHeaderSubtitle}>Gestiona sus perfiles y revisa su estado en segundos.</Text>
+          </View>
+
           <Button title="Nueva mascota" onPress={() => setScreen('AddPet')} />
-          <Button title="Refrescar" onPress={fetchPets} />
 
           {pets.map((pet) => (
             <TouchableOpacity
@@ -666,9 +699,19 @@ export default function App() {
               }}
               style={styles.listCard}
             >
+              <View style={styles.homePetImageWrap}>
+                {petSignedUrls[pet.id] ? (
+                  <Image source={{ uri: petSignedUrls[pet.id] ?? undefined }} style={styles.homePetImage} resizeMode="cover" />
+                ) : (
+                  <View style={[styles.homePetImage, styles.avatarPlaceholder]}>
+                    <Text style={styles.avatarInitials}>{initialsFromName(pet.name)}</Text>
+                  </View>
+                )}
+              </View>
+
               <View style={{ flex: 1 }}>
                 <Text style={styles.cardTitle}>{pet.name}</Text>
-                <Text style={{ color: '#475569' }}>
+                <Text style={styles.cardSubtitle}>
                   {pet.species}
                   {pet.breed ? ` · ${pet.breed}` : ''}
                 </Text>
@@ -681,6 +724,10 @@ export default function App() {
               </View>
             </TouchableOpacity>
           ))}
+
+          <View style={styles.logoutWrap}>
+            <Button title="Cerrar sesión" onPress={handleLogout} />
+          </View>
         </View>
       );
     }
@@ -981,7 +1028,7 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.title}>{title}</Text>
+      {screen !== 'Home' ? <Text style={styles.title}>{title}</Text> : null}
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         {renderScreen()}
       </ScrollView>
@@ -1012,14 +1059,40 @@ const styles = StyleSheet.create({
   listCard: {
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    borderRadius: 14,
-    padding: 14,
+    borderRadius: 18,
+    padding: 16,
     backgroundColor: '#fff',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10
+    gap: 14,
+    minHeight: 124
   },
   cardTitle: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
+  cardSubtitle: { color: '#475569', fontSize: 15, marginTop: 2 },
+
+  homeHeader: {
+    borderRadius: 18,
+    padding: 18,
+    backgroundColor: '#0f172a',
+    marginBottom: 4
+  },
+  homeHeaderEyebrow: { color: '#93c5fd', fontWeight: '700', marginBottom: 6 },
+  homeHeaderTitle: { color: '#fff', fontSize: 28, fontWeight: '800' },
+  homeHeaderSubtitle: { color: '#cbd5e1', marginTop: 6, fontSize: 14 },
+
+  homePetImageWrap: {
+    width: 90,
+    height: 90,
+    borderRadius: 18,
+    overflow: 'hidden',
+    backgroundColor: '#e2e8f0'
+  },
+  homePetImage: {
+    width: 90,
+    height: 90,
+    borderRadius: 18
+  },
+  logoutWrap: { marginTop: 8, marginBottom: 14 },
 
   profileHeader: {
     backgroundColor: '#fff',
