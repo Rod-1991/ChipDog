@@ -1167,6 +1167,20 @@ export default function App() {
             onSubmitEditing={() => registerScannedCode('QR')}
             autoCapitalize="characters"
             blurOnSubmit={false}
+          <Text style={styles.linkMethodText}>
+            Escanea el QR de la placa o pega el código leído por el lector.
+          </Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Código leído por QR"
+            value={qrTagCode}
+            onChangeText={setQrTagCode}
+            autoCapitalize="characters"
+          />
+          <Button
+            title={loading ? 'Vinculando...' : 'Confirmar vínculo por QR'}
+            onPress={() => handleLinkTag(qrTagCode, 'QR')}
+            disabled={loading}
           />
         </Card>
 
@@ -1187,6 +1201,23 @@ export default function App() {
         </Card>
 
         {scanHint ? <Text style={styles.scanHint}>{scanHint}</Text> : null}
+
+          <Text style={styles.linkMethodText}>
+            Acerca la placa al lector NFC y confirma con el código detectado.
+          </Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Código leído por NFC"
+            value={nfcTagCode}
+            onChangeText={setNfcTagCode}
+            autoCapitalize="characters"
+          />
+          <Button
+            title={loading ? 'Vinculando...' : 'Confirmar vínculo por NFC'}
+            onPress={() => handleLinkTag(nfcTagCode, 'NFC')}
+            disabled={loading}
+          />
+        </Card>
 
         <Button title="Cancelar" onPress={() => setScreen('PetDetail')} />
       </View>
