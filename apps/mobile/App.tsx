@@ -35,16 +35,8 @@ type Pet = {
   sex?: string | null;
   weight_kg?: number | null;
 
-  // ✅ Contacto principal
-  owner_name?: string | null;
   owner_phone?: string | null;
   owner_whatsapp?: string | null;
-
-  // ✅ Contacto alternativo
-  contact2_name?: string | null;
-  contact2_phone?: string | null;
-  contact2_whatsapp?: string | null;
-
   public_notes?: string | null;
 
   allergies?: string | null;
@@ -76,7 +68,7 @@ const initialsFromName = (name: string) => {
   return (first + second).toUpperCase() || '?';
 };
 
-// ✅ fuera de App
+// ✅ FUERA de App() para evitar re-mounts al tipear (teclado no se cierra)
 type InfoRowProps = { label: string; value?: string | null };
 const InfoRow = ({ label, value }: InfoRowProps) => (
   <View style={styles.row}>
@@ -91,10 +83,6 @@ const Card = ({ title, children }: CardProps) => (
     <Text style={styles.cardHeader}>{title}</Text>
     <View style={{ gap: 10 }}>{children}</View>
   </View>
-);
-
-const SectionTitle = ({ children }: { children: string }) => (
-  <Text style={{ fontWeight: '900', color: '#0f172a', marginTop: 4 }}>{children}</Text>
 );
 
 export default function App() {
@@ -114,15 +102,8 @@ export default function App() {
     birth_year: '',
     sex: '',
     weight_kg: '',
-
-    owner_name: '',
     owner_phone: '',
     owner_whatsapp: '',
-
-    contact2_name: '',
-    contact2_phone: '',
-    contact2_whatsapp: '',
-
     public_notes: '',
     allergies: '',
     medications: '',
@@ -131,7 +112,6 @@ export default function App() {
     vet_phone: ''
   });
 
-  // Found flow
   const [foundCode, setFoundCode] = useState('');
   const [foundPet, setFoundPet] = useState<any | null>(null);
 
@@ -169,6 +149,7 @@ export default function App() {
     const {
       data: { user }
     } = await supabase.auth.getUser();
+
     if (!user) return;
 
     const { data, error } = await supabase
@@ -192,11 +173,13 @@ export default function App() {
     }
 
     const { data, error } = await supabase.storage.from('pet-photos').createSignedUrl(photoPath, 60 * 60);
+
     if (error) {
       console.log('signedUrl error', error.message);
       setPetPhotoSignedUrl(null);
       return;
     }
+
     setPetPhotoSignedUrl(data.signedUrl);
   };
 
@@ -211,7 +194,7 @@ export default function App() {
       const { data, error } = await supabase
         .from('pets')
         .select(
-          'id,name,species,breed,is_lost,photo_path,color,birth_year,sex,weight_kg,owner_name,owner_phone,owner_whatsapp,contact2_name,contact2_phone,contact2_whatsapp,public_notes,allergies,medications,conditions,vet_name,vet_phone'
+          'id,name,species,breed,is_lost,photo_path,color,birth_year,sex,weight_kg,owner_phone,owner_whatsapp,public_notes,allergies,medications,conditions,vet_name,vet_phone'
         )
         .eq('id', petId)
         .eq('owner_id', user.id)
@@ -231,15 +214,8 @@ export default function App() {
         birth_year: pet.birth_year ? String(pet.birth_year) : '',
         sex: pet.sex ?? '',
         weight_kg: pet.weight_kg != null ? String(pet.weight_kg) : '',
-
-        owner_name: pet.owner_name ?? '',
         owner_phone: pet.owner_phone ?? '',
         owner_whatsapp: pet.owner_whatsapp ?? '',
-
-        contact2_name: pet.contact2_name ?? '',
-        contact2_phone: pet.contact2_phone ?? '',
-        contact2_whatsapp: pet.contact2_whatsapp ?? '',
-
         public_notes: pet.public_notes ?? '',
         allergies: pet.allergies ?? '',
         medications: pet.medications ?? '',
@@ -284,28 +260,14 @@ export default function App() {
       return;
     }
 
-    // ✅ Si está marcado como perdido, por lo menos 1 contacto útil
-    const hasPrimaryContact =
-      normalizeStringOrNull(petDraft.owner_phone) || normalizeStringOrNull(petDraft.owner_whatsapp);
-    if (selectedPet.is_lost && !hasPrimaryContact) {
-      Alert.alert('Falta contacto', 'Si está marcado como perdido, agrega al menos teléfono o WhatsApp del contacto principal.');
-      return;
-    }
-
     const payload: Partial<Pet> = {
       color: normalizeStringOrNull(petDraft.color),
       birth_year: birthYear,
       sex: normalizeStringOrNull(petDraft.sex),
       weight_kg: weight,
 
-      owner_name: normalizeStringOrNull(petDraft.owner_name),
       owner_phone: normalizeStringOrNull(petDraft.owner_phone),
       owner_whatsapp: normalizeStringOrNull(petDraft.owner_whatsapp),
-
-      contact2_name: normalizeStringOrNull(petDraft.contact2_name),
-      contact2_phone: normalizeStringOrNull(petDraft.contact2_phone),
-      contact2_whatsapp: normalizeStringOrNull(petDraft.contact2_whatsapp),
-
       public_notes: normalizeStringOrNull(petDraft.public_notes),
 
       allergies: normalizeStringOrNull(petDraft.allergies),
@@ -323,7 +285,7 @@ export default function App() {
         .update(payload)
         .eq('id', selectedPet.id)
         .select(
-          'id,name,species,breed,is_lost,photo_path,color,birth_year,sex,weight_kg,owner_name,owner_phone,owner_whatsapp,contact2_name,contact2_phone,contact2_whatsapp,public_notes,allergies,medications,conditions,vet_name,vet_phone'
+          'id,name,species,breed,is_lost,photo_path,color,birth_year,sex,weight_kg,owner_phone,owner_whatsapp,public_notes,allergies,medications,conditions,vet_name,vet_phone'
         )
         .single();
 
@@ -345,6 +307,7 @@ export default function App() {
     const {
       data: { user }
     } = await supabase.auth.getUser();
+
     if (!user) {
       Alert.alert('Error', 'Usuario no autenticado');
       return;
@@ -357,7 +320,7 @@ export default function App() {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: [ImagePicker.MediaType.Image],
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       quality: 0.85,
       base64: true
@@ -367,6 +330,7 @@ export default function App() {
 
     const asset = result.assets[0];
     const b64 = asset.base64;
+
     if (!b64) {
       Alert.alert('Error', 'No se pudo leer la imagen (base64 vacío). Prueba otra foto.');
       return;
@@ -402,6 +366,7 @@ export default function App() {
       }
 
       Alert.alert('Foto actualizada ✅');
+
       setSelectedPet((p) => (p ? { ...p, photo_path: updatedRow.photo_path } : p));
       await loadSelectedPetPhoto(updatedRow.photo_path ?? null);
       await fetchPets();
@@ -416,6 +381,7 @@ export default function App() {
     const init = async () => {
       try {
         setLoading(true);
+
         const { data, error } = await supabase.auth.getSession();
         if (!mounted) return;
 
@@ -593,7 +559,7 @@ export default function App() {
     setScreen('PetDetail');
   };
 
-  // Se mantienen (útiles para FoundResult futuro)
+  // (Se mantienen por si los usas en FoundResult más adelante)
   const openWhatsApp = async (phone: string) => {
     const digits = phone.replace(/[^\d+]/g, '');
     if (!digits) return;
@@ -630,7 +596,13 @@ export default function App() {
             autoCapitalize="none"
             keyboardType="email-address"
           />
-          <TextInput value={password} onChangeText={setPassword} style={styles.input} placeholder="Contraseña" secureTextEntry />
+          <TextInput
+            value={password}
+            onChangeText={setPassword}
+            style={styles.input}
+            placeholder="Contraseña"
+            secureTextEntry
+          />
           <Button title={loading ? 'Ingresando...' : 'Ingresar'} onPress={handleLogin} disabled={loading} />
           <Button title="Encontré una mascota (escaneo tag)" onPress={() => setScreen('FoundTag')} />
         </View>
@@ -641,7 +613,13 @@ export default function App() {
       return (
         <View style={styles.form}>
           <Text style={{ fontWeight: '600' }}>Ingresa el código del tag</Text>
-          <TextInput style={styles.input} placeholder="Ej: 1234" value={foundCode} onChangeText={setFoundCode} autoCapitalize="characters" />
+          <TextInput
+            style={styles.input}
+            placeholder="Ej: 1234"
+            value={foundCode}
+            onChangeText={setFoundCode}
+            autoCapitalize="characters"
+          />
           <Button title={loading ? 'Buscando...' : 'Buscar'} onPress={handleFoundLookup} disabled={loading} />
           <Button title="Volver" onPress={() => setScreen('Login')} />
         </View>
@@ -710,12 +688,44 @@ export default function App() {
     if (screen === 'AddPet') {
       return (
         <View style={styles.form}>
-          <TextInput style={styles.input} placeholder="Nombre" value={petForm.name} onChangeText={(v) => setPetForm((p) => ({ ...p, name: v }))} />
-          <TextInput style={styles.input} placeholder="Especie" value={petForm.species} onChangeText={(v) => setPetForm((p) => ({ ...p, species: v }))} />
-          <TextInput style={styles.input} placeholder="Raza" value={petForm.breed} onChangeText={(v) => setPetForm((p) => ({ ...p, breed: v }))} />
-          <TextInput style={styles.input} placeholder="Color" value={petForm.color} onChangeText={(v) => setPetForm((p) => ({ ...p, color: v }))} />
-          <TextInput style={styles.input} placeholder="Año nacimiento" keyboardType="number-pad" value={petForm.birth_year} onChangeText={(v) => setPetForm((p) => ({ ...p, birth_year: v }))} />
-          <TextInput style={styles.input} placeholder="URL foto (opcional)" value={petForm.photo_url} onChangeText={(v) => setPetForm((p) => ({ ...p, photo_url: v }))} autoCapitalize="none" />
+          <TextInput
+            style={styles.input}
+            placeholder="Nombre"
+            value={petForm.name}
+            onChangeText={(v) => setPetForm((p) => ({ ...p, name: v }))}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Especie"
+            value={petForm.species}
+            onChangeText={(v) => setPetForm((p) => ({ ...p, species: v }))}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Raza"
+            value={petForm.breed}
+            onChangeText={(v) => setPetForm((p) => ({ ...p, breed: v }))}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Color"
+            value={petForm.color}
+            onChangeText={(v) => setPetForm((p) => ({ ...p, color: v }))}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Año nacimiento"
+            keyboardType="number-pad"
+            value={petForm.birth_year}
+            onChangeText={(v) => setPetForm((p) => ({ ...p, birth_year: v }))}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="URL foto (opcional)"
+            value={petForm.photo_url}
+            onChangeText={(v) => setPetForm((p) => ({ ...p, photo_url: v }))}
+            autoCapitalize="none"
+          />
           <Button title={loading ? 'Guardando...' : 'Guardar mascota'} onPress={handleCreatePet} disabled={loading} />
           <Button title="Volver" onPress={() => setScreen('Home')} />
         </View>
@@ -735,9 +745,6 @@ export default function App() {
       const statusLabel = selectedPet.is_lost ? 'Perdido' : 'En casa';
       const badgeStyle = selectedPet.is_lost ? styles.badgeDanger : styles.badgeOk;
       const badgeTextStyle = selectedPet.is_lost ? styles.badgeTextDanger : styles.badgeTextOk;
-
-      const hasContact2 =
-        !!(selectedPet.contact2_name?.trim() || selectedPet.contact2_phone?.trim() || selectedPet.contact2_whatsapp?.trim());
 
       return (
         <View style={{ gap: 14 }}>
@@ -765,7 +772,11 @@ export default function App() {
           </View>
 
           <View style={styles.actionRow}>
-            <TouchableOpacity style={[styles.actionBtn, styles.actionBtnPrimary]} onPress={() => pickAndUploadPetPhoto(selectedPet.id)} disabled={loading}>
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.actionBtnPrimary]}
+              onPress={() => pickAndUploadPetPhoto(selectedPet.id)}
+              disabled={loading}
+            >
               <Text style={styles.actionBtnPrimaryText}>{loading ? 'Subiendo...' : 'Cambiar foto'}</Text>
             </TouchableOpacity>
 
@@ -779,22 +790,50 @@ export default function App() {
               <View style={{ flex: 1 }}>
                 <Text style={{ fontWeight: '600' }}>{selectedPet.is_lost ? 'Marcado como perdido' : 'En casa'}</Text>
                 <Text style={{ color: '#64748b', marginTop: 2 }}>
-                  {selectedPet.is_lost ? 'Alguien que escanee el tag verá el contacto.' : 'Si se pierde, actívalo para que te contacten.'}
+                  {selectedPet.is_lost
+                    ? 'Alguien que escanee el tag verá el contacto.'
+                    : 'Si se pierde, actívalo para que te contacten.'}
                 </Text>
               </View>
-              <Switch value={selectedPet.is_lost} onValueChange={(v) => updatePetLostStatus(selectedPet.id, v)} disabled={loading} />
+              <Switch
+                value={selectedPet.is_lost}
+                onValueChange={(v) => updatePetLostStatus(selectedPet.id, v)}
+                disabled={loading}
+              />
             </View>
           </Card>
 
           <Card title="Información">
             {isEditing ? (
               <>
-                <TextInput style={styles.input} placeholder="Color (ej: Tricolor rojo)" value={petDraft.color} onChangeText={(v) => setPetDraft((p) => ({ ...p, color: v }))} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Color (ej: Negro con blanco)"
+                  value={petDraft.color}
+                  onChangeText={(v) => setPetDraft((p) => ({ ...p, color: v }))}
+                />
                 <View style={{ flexDirection: 'row', gap: 10 }}>
-                  <TextInput style={[styles.input, { flex: 1 }]} placeholder="Año nac." keyboardType="number-pad" value={petDraft.birth_year} onChangeText={(v) => setPetDraft((p) => ({ ...p, birth_year: v }))} />
-                  <TextInput style={[styles.input, { flex: 1 }]} placeholder="Sexo (M/H)" value={petDraft.sex} onChangeText={(v) => setPetDraft((p) => ({ ...p, sex: v }))} />
+                  <TextInput
+                    style={[styles.input, { flex: 1 }]}
+                    placeholder="Año nac."
+                    keyboardType="number-pad"
+                    value={petDraft.birth_year}
+                    onChangeText={(v) => setPetDraft((p) => ({ ...p, birth_year: v }))}
+                  />
+                  <TextInput
+                    style={[styles.input, { flex: 1 }]}
+                    placeholder="Sexo (M/H)"
+                    value={petDraft.sex}
+                    onChangeText={(v) => setPetDraft((p) => ({ ...p, sex: v }))}
+                  />
                 </View>
-                <TextInput style={styles.input} placeholder="Peso (kg)" keyboardType="decimal-pad" value={petDraft.weight_kg} onChangeText={(v) => setPetDraft((p) => ({ ...p, weight_kg: v }))} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Peso (kg)"
+                  keyboardType="decimal-pad"
+                  value={petDraft.weight_kg}
+                  onChangeText={(v) => setPetDraft((p) => ({ ...p, weight_kg: v }))}
+                />
               </>
             ) : (
               <>
@@ -809,9 +848,27 @@ export default function App() {
           <Card title="Salud">
             {isEditing ? (
               <>
-                <TextInput style={[styles.input, styles.multiline]} placeholder="Alergias (opcional)" value={petDraft.allergies} onChangeText={(v) => setPetDraft((p) => ({ ...p, allergies: v }))} multiline />
-                <TextInput style={[styles.input, styles.multiline]} placeholder="Medicamentos (opcional)" value={petDraft.medications} onChangeText={(v) => setPetDraft((p) => ({ ...p, medications: v }))} multiline />
-                <TextInput style={[styles.input, styles.multiline]} placeholder="Condiciones (opcional)" value={petDraft.conditions} onChangeText={(v) => setPetDraft((p) => ({ ...p, conditions: v }))} multiline />
+                <TextInput
+                  style={[styles.input, styles.multiline]}
+                  placeholder="Alergias (opcional)"
+                  value={petDraft.allergies}
+                  onChangeText={(v) => setPetDraft((p) => ({ ...p, allergies: v }))}
+                  multiline
+                />
+                <TextInput
+                  style={[styles.input, styles.multiline]}
+                  placeholder="Medicamentos (opcional)"
+                  value={petDraft.medications}
+                  onChangeText={(v) => setPetDraft((p) => ({ ...p, medications: v }))}
+                  multiline
+                />
+                <TextInput
+                  style={[styles.input, styles.multiline]}
+                  placeholder="Condiciones (opcional)"
+                  value={petDraft.conditions}
+                  onChangeText={(v) => setPetDraft((p) => ({ ...p, conditions: v }))}
+                  multiline
+                />
               </>
             ) : (
               <>
@@ -822,37 +879,29 @@ export default function App() {
             )}
           </Card>
 
-          {/* ✅ CONTACTO CON 2 CONTACTOS */}
+          {/* ✅ CONTACTO: sin botones en modo NO edición */}
           <Card title="Contacto">
             {isEditing ? (
               <>
-                <SectionTitle>Contacto 1 (principal)</SectionTitle>
-                <TextInput style={styles.input} placeholder="Nombre (ej: Rodrigo)" value={petDraft.owner_name} onChangeText={(v) => setPetDraft((p) => ({ ...p, owner_name: v }))} />
-                <TextInput style={styles.input} placeholder="Teléfono (ej: +569...)" value={petDraft.owner_phone} onChangeText={(v) => setPetDraft((p) => ({ ...p, owner_phone: v }))} autoCapitalize="none" />
-                <TextInput style={styles.input} placeholder="WhatsApp (ej: +569...)" value={petDraft.owner_whatsapp} onChangeText={(v) => setPetDraft((p) => ({ ...p, owner_whatsapp: v }))} autoCapitalize="none" />
-
-                <View style={{ height: 6 }} />
-
-                <SectionTitle>Contacto 2 (alternativo)</SectionTitle>
-                <TextInput style={styles.input} placeholder="Nombre (ej: Caroline)" value={petDraft.contact2_name} onChangeText={(v) => setPetDraft((p) => ({ ...p, contact2_name: v }))} />
-                <TextInput style={styles.input} placeholder="Teléfono (ej: +569...)" value={petDraft.contact2_phone} onChangeText={(v) => setPetDraft((p) => ({ ...p, contact2_phone: v }))} autoCapitalize="none" />
-                <TextInput style={styles.input} placeholder="WhatsApp (ej: +569...)" value={petDraft.contact2_whatsapp} onChangeText={(v) => setPetDraft((p) => ({ ...p, contact2_whatsapp: v }))} autoCapitalize="none" />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Teléfono (ej: +569...)"
+                  value={petDraft.owner_phone}
+                  onChangeText={(v) => setPetDraft((p) => ({ ...p, owner_phone: v }))}
+                  autoCapitalize="none"
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="WhatsApp (ej: +569...)"
+                  value={petDraft.owner_whatsapp}
+                  onChangeText={(v) => setPetDraft((p) => ({ ...p, owner_whatsapp: v }))}
+                  autoCapitalize="none"
+                />
               </>
             ) : (
               <>
-                <InfoRow label="Nombre" value={selectedPet.owner_name ?? null} />
                 <InfoRow label="Teléfono" value={selectedPet.owner_phone ?? null} />
                 <InfoRow label="WhatsApp" value={selectedPet.owner_whatsapp ?? null} />
-
-                {hasContact2 ? (
-                  <>
-                    <View style={{ height: 10 }} />
-                    <Text style={{ fontWeight: '900', color: '#0f172a' }}>Contacto 2</Text>
-                    <InfoRow label="Nombre" value={selectedPet.contact2_name ?? null} />
-                    <InfoRow label="Teléfono" value={selectedPet.contact2_phone ?? null} />
-                    <InfoRow label="WhatsApp" value={selectedPet.contact2_whatsapp ?? null} />
-                  </>
-                ) : null}
               </>
             )}
           </Card>
@@ -860,8 +909,19 @@ export default function App() {
           <Card title="Veterinario">
             {isEditing ? (
               <>
-                <TextInput style={styles.input} placeholder="Nombre vet (opcional)" value={petDraft.vet_name} onChangeText={(v) => setPetDraft((p) => ({ ...p, vet_name: v }))} />
-                <TextInput style={styles.input} placeholder="Teléfono vet (opcional)" value={petDraft.vet_phone} onChangeText={(v) => setPetDraft((p) => ({ ...p, vet_phone: v }))} autoCapitalize="none" />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Nombre vet (opcional)"
+                  value={petDraft.vet_name}
+                  onChangeText={(v) => setPetDraft((p) => ({ ...p, vet_name: v }))}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Teléfono vet (opcional)"
+                  value={petDraft.vet_phone}
+                  onChangeText={(v) => setPetDraft((p) => ({ ...p, vet_phone: v }))}
+                  autoCapitalize="none"
+                />
               </>
             ) : (
               <>
@@ -881,7 +941,9 @@ export default function App() {
                 multiline
               />
             ) : (
-              <Text style={{ color: '#334155' }}>{selectedPet.public_notes?.trim() ? selectedPet.public_notes : '—'}</Text>
+              <Text style={{ color: '#334155' }}>
+                {selectedPet.public_notes?.trim() ? selectedPet.public_notes : '—'}
+              </Text>
             )}
           </Card>
 
@@ -902,10 +964,15 @@ export default function App() {
       );
     }
 
-    // LinkTag
     return (
       <View style={styles.form}>
-        <TextInput style={styles.input} placeholder="Código tag" value={tagCode} onChangeText={setTagCode} autoCapitalize="characters" />
+        <TextInput
+          style={styles.input}
+          placeholder="Código tag"
+          value={tagCode}
+          onChangeText={setTagCode}
+          autoCapitalize="characters"
+        />
         <Button title={loading ? 'Vinculando...' : 'Confirmar vínculo'} onPress={handleLinkTag} disabled={loading} />
         <Button title="Cancelar" onPress={() => setScreen('PetDetail')} />
       </View>
@@ -964,14 +1031,33 @@ const styles = StyleSheet.create({
     gap: 14,
     alignItems: 'center'
   },
-  avatarWrap: { width: 92, height: 92, borderRadius: 18, overflow: 'hidden' },
-  avatar: { width: 92, height: 92, borderRadius: 18 },
-  avatarPlaceholder: { backgroundColor: '#0f172a', alignItems: 'center', justifyContent: 'center' },
+  avatarWrap: {
+    width: 92,
+    height: 92,
+    borderRadius: 18,
+    overflow: 'hidden'
+  },
+  avatar: {
+    width: 92,
+    height: 92,
+    borderRadius: 18
+  },
+  avatarPlaceholder: {
+    backgroundColor: '#0f172a',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
   avatarInitials: { color: '#fff', fontSize: 26, fontWeight: '800', letterSpacing: 1 },
   profileName: { fontSize: 22, fontWeight: '800', color: '#0f172a' },
   profileSub: { color: '#475569', fontSize: 14, fontWeight: '600' },
 
-  card: { backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0', padding: 14 },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 14
+  },
   cardHeader: { fontSize: 14, fontWeight: '800', color: '#0f172a', marginBottom: 10 },
 
   row: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
@@ -988,7 +1074,13 @@ const styles = StyleSheet.create({
   badgeTextDanger: { color: '#be123c' },
 
   actionRow: { flexDirection: 'row', gap: 10 },
-  actionBtn: { borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
+  actionBtn: {
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
   actionBtnPrimary: { backgroundColor: '#0f172a' },
   actionBtnPrimaryText: { color: '#fff', fontWeight: '900' },
   actionBtnGhost: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#cbd5e1' },

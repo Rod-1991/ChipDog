@@ -1,8 +1,12 @@
 {
-  "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true,
-    "baseUrl": "."
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "skipLibCheck": true
   },
-  "include": ["**/*.ts", "**/*.tsx", "../..//packages/shared/src/**/*.ts"]
+  "include": [
+    "**/*.ts",
+    "**/*.tsx"
+  ],
+  "extends": "../../node_modules/expo/tsconfig.base"
 }

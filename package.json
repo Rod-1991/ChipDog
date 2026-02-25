@@ -8,5 +8,8 @@
   ],
   "scripts": {
     "typecheck": "npm run -w @chipdog/shared build && npm run -w @chipdog/mobile typecheck"
+  },
+  "devDependencies": {
+    "expo-module-scripts": "^5.0.8"
   }
 }
