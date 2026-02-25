@@ -85,6 +85,25 @@ const Card = ({ title, children }: CardProps) => (
   </View>
 );
 
+const SPECIES_OPTIONS = ['Perro', 'Gato'] as const;
+
+const formatBirthDate = (date: Date) => {
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${day}/${month}/${date.getFullYear()}`;
+};
+
+const buildCalendarDays = (date: Date) => {
+  const firstDay = new Date(date.getFullYear(), date.getMonth(), 1);
+  const firstWeekday = (firstDay.getDay() + 6) % 7;
+  const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  const days = [] as Array<number | null>;
+
+  for (let i = 0; i < firstWeekday; i += 1) days.push(null);
+  for (let d = 1; d <= daysInMonth; d += 1) days.push(d);
+  return days;
+};
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>('Login');
   const [email, setEmail] = useState('');
@@ -118,12 +137,14 @@ export default function App() {
 
   const [petForm, setPetForm] = useState({
     name: '',
-    species: '',
+    species: 'Perro',
     breed: '',
-    color: '',
-    birth_year: '',
-    photo_url: ''
+    color: ''
   });
+  const [petBirthDate, setPetBirthDate] = useState<Date | null>(null);
+  const [showSpeciesDropdown, setShowSpeciesDropdown] = useState(false);
+  const [showBirthCalendar, setShowBirthCalendar] = useState(false);
+  const [calendarMonthDate, setCalendarMonthDate] = useState(() => new Date());
 
   const [tagCode, setTagCode] = useState('');
 
@@ -523,7 +544,8 @@ export default function App() {
   const handleCreatePet = async () => {
     const parsed = addPetSchema.safeParse({
       ...petForm,
-      birth_year: petForm.birth_year || undefined
+      birth_year: petBirthDate ? petBirthDate.getFullYear() : undefined,
+      photo_url: undefined
     });
 
     if (!parsed.success) {
@@ -553,7 +575,11 @@ export default function App() {
     }
 
     Alert.alert('Mascota creada');
-    setPetForm({ name: '', species: '', breed: '', color: '', birth_year: '', photo_url: '' });
+    setPetForm({ name: '', species: 'Perro', breed: '', color: '' });
+    setPetBirthDate(null);
+    setShowSpeciesDropdown(false);
+    setShowBirthCalendar(false);
+    setCalendarMonthDate(new Date());
     await fetchPets();
     setScreen('Home');
   };
@@ -688,6 +714,9 @@ export default function App() {
             <Text style={styles.homeHeaderSubtitle}>Gestiona sus perfiles y revisa su estado en segundos.</Text>
           </View>
 
+          <TouchableOpacity style={styles.addPetCta} onPress={() => setScreen('AddPet')}>
+            <Text style={styles.addPetCtaText}>+ Agregar Mascota</Text>
+          </TouchableOpacity>
           <Button title="Nueva mascota" onPress={() => setScreen('AddPet')} />
 
           {pets.map((pet) => (
@@ -733,6 +762,9 @@ export default function App() {
     }
 
     if (screen === 'AddPet') {
+      const monthDays = buildCalendarDays(calendarMonthDate);
+      const monthTitle = calendarMonthDate.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' });
+
       return (
         <View style={styles.form}>
           <TextInput
@@ -741,12 +773,35 @@ export default function App() {
             value={petForm.name}
             onChangeText={(v) => setPetForm((p) => ({ ...p, name: v }))}
           />
-          <TextInput
-            style={styles.input}
-            placeholder="Especie"
-            value={petForm.species}
-            onChangeText={(v) => setPetForm((p) => ({ ...p, species: v }))}
-          />
+          <View>
+            <TouchableOpacity
+              style={[styles.input, styles.selectInput]}
+              onPress={() => setShowSpeciesDropdown((v) => !v)}
+              activeOpacity={0.9}
+            >
+              <Text style={styles.selectInputText}>{petForm.species}</Text>
+              <Text style={styles.selectChevron}>{showSpeciesDropdown ? '▲' : '▼'}</Text>
+            </TouchableOpacity>
+
+            {showSpeciesDropdown ? (
+              <View style={styles.selectMenu}>
+                {SPECIES_OPTIONS.map((option) => (
+                  <TouchableOpacity
+                    key={option}
+                    style={[styles.selectOption, petForm.species === option && styles.selectOptionActive]}
+                    onPress={() => {
+                      setPetForm((p) => ({ ...p, species: option }));
+                      setShowSpeciesDropdown(false);
+                    }}
+                  >
+                    <Text style={[styles.selectOptionText, petForm.species === option && styles.selectOptionTextActive]}>
+                      {option}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : null}
+          </View>
           <TextInput
             style={styles.input}
             placeholder="Raza"
@@ -759,20 +814,77 @@ export default function App() {
             value={petForm.color}
             onChangeText={(v) => setPetForm((p) => ({ ...p, color: v }))}
           />
-          <TextInput
-            style={styles.input}
-            placeholder="Año nacimiento"
-            keyboardType="number-pad"
-            value={petForm.birth_year}
-            onChangeText={(v) => setPetForm((p) => ({ ...p, birth_year: v }))}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="URL foto (opcional)"
-            value={petForm.photo_url}
-            onChangeText={(v) => setPetForm((p) => ({ ...p, photo_url: v }))}
-            autoCapitalize="none"
-          />
+          <View>
+            <TouchableOpacity style={[styles.input, styles.selectInput]} onPress={() => setShowBirthCalendar((v) => !v)}>
+              <Text style={styles.selectInputText}>{petBirthDate ? formatBirthDate(petBirthDate) : 'Fecha de nacimiento'}</Text>
+              <Text style={styles.selectChevron}>{showBirthCalendar ? '▲' : '📅'}</Text>
+            </TouchableOpacity>
+
+            {showBirthCalendar ? (
+              <View style={styles.calendarCard}>
+                <View style={styles.calendarHeader}>
+                  <TouchableOpacity
+                    style={styles.calendarArrowBtn}
+                    onPress={() =>
+                      setCalendarMonthDate(
+                        (current) => new Date(current.getFullYear(), current.getMonth() - 1, 1)
+                      )
+                    }
+                  >
+                    <Text style={styles.calendarArrowText}>‹</Text>
+                  </TouchableOpacity>
+
+                  <Text style={styles.calendarMonthTitle}>{monthTitle}</Text>
+
+                  <TouchableOpacity
+                    style={styles.calendarArrowBtn}
+                    onPress={() =>
+                      setCalendarMonthDate(
+                        (current) => new Date(current.getFullYear(), current.getMonth() + 1, 1)
+                      )
+                    }
+                  >
+                    <Text style={styles.calendarArrowText}>›</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.calendarWeekRow}>
+                  {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((d) => (
+                    <Text key={d} style={styles.calendarWeekDay}>
+                      {d}
+                    </Text>
+                  ))}
+                </View>
+
+                <View style={styles.calendarGrid}>
+                  {monthDays.map((day, idx) => {
+                    const isSelected =
+                      day != null &&
+                      petBirthDate != null &&
+                      petBirthDate.getFullYear() === calendarMonthDate.getFullYear() &&
+                      petBirthDate.getMonth() === calendarMonthDate.getMonth() &&
+                      petBirthDate.getDate() === day;
+
+                    return (
+                      <TouchableOpacity
+                        key={`${day ?? 'empty'}-${idx}`}
+                        disabled={day == null}
+                        style={[styles.calendarDayBtn, day == null && styles.calendarDayBtnDisabled, isSelected && styles.calendarDayBtnSelected]}
+                        onPress={() => {
+                          if (!day) return;
+                          setPetBirthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth(), day));
+                          setShowBirthCalendar(false);
+                        }}
+                      >
+                        <Text style={[styles.calendarDayText, isSelected && styles.calendarDayTextSelected]}>{day ?? ''}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
+          </View>
+
           <Button title={loading ? 'Guardando...' : 'Guardar mascota'} onPress={handleCreatePet} disabled={loading} />
           <Button title="Volver" onPress={() => setScreen('Home')} />
         </View>
@@ -1079,6 +1191,69 @@ const styles = StyleSheet.create({
   homeHeaderEyebrow: { color: '#93c5fd', fontWeight: '700', marginBottom: 6 },
   homeHeaderTitle: { color: '#fff', fontSize: 28, fontWeight: '800' },
   homeHeaderSubtitle: { color: '#cbd5e1', marginTop: 6, fontSize: 14 },
+  addPetCta: {
+    backgroundColor: '#2563eb',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#1d4ed8',
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 10,
+    elevation: 2
+  },
+  addPetCtaText: { color: '#fff', fontWeight: '900', fontSize: 17 },
+
+  selectInput: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  selectInputText: { color: '#0f172a', fontWeight: '600' },
+  selectChevron: { color: '#475569', fontWeight: '800' },
+  selectMenu: {
+    marginTop: 6,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 12,
+    overflow: 'hidden'
+  },
+  selectOption: { paddingVertical: 12, paddingHorizontal: 12 },
+  selectOptionActive: { backgroundColor: '#eff6ff' },
+  selectOptionText: { color: '#0f172a', fontWeight: '600' },
+  selectOptionTextActive: { color: '#1d4ed8' },
+
+  calendarCard: {
+    marginTop: 8,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 14,
+    padding: 10
+  },
+  calendarHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  calendarArrowBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f1f5f9'
+  },
+  calendarArrowText: { fontSize: 18, color: '#0f172a', fontWeight: '700' },
+  calendarMonthTitle: { color: '#0f172a', fontWeight: '800', textTransform: 'capitalize' },
+  calendarWeekRow: { flexDirection: 'row', marginBottom: 6 },
+  calendarWeekDay: { flex: 1, textAlign: 'center', color: '#64748b', fontWeight: '700' },
+  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap', rowGap: 6 },
+  calendarDayBtn: {
+    width: '14.285%',
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8
+  },
+  calendarDayBtnDisabled: { opacity: 0 },
+  calendarDayBtnSelected: { backgroundColor: '#2563eb' },
+  calendarDayText: { color: '#0f172a', fontWeight: '600' },
+  calendarDayTextSelected: { color: '#fff', fontWeight: '800' },
 
   homePetImageWrap: {
     width: 90,
