@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -146,7 +146,12 @@ export default function App() {
   const [showBirthCalendar, setShowBirthCalendar] = useState(false);
   const [calendarMonthDate, setCalendarMonthDate] = useState(() => new Date());
 
-  const [tagCode, setTagCode] = useState('');
+  const [qrTagCode, setQrTagCode] = useState('');
+  const [nfcTagCode, setNfcTagCode] = useState('');
+  const [scanHint, setScanHint] = useState<string | null>(null);
+
+  const qrScannerInputRef = useRef<TextInput | null>(null);
+  const nfcScannerInputRef = useRef<TextInput | null>(null);
 
   const title = useMemo(() => {
     switch (screen) {
@@ -584,13 +589,13 @@ export default function App() {
     setScreen('Home');
   };
 
-  const handleLinkTag = async () => {
+  const handleLinkTag = async (code: string, sourceLabel: 'QR' | 'NFC') => {
     if (!selectedPet) {
       Alert.alert('Selecciona una mascota primero');
       return;
     }
 
-    const parsed = linkTagSchema.safeParse({ code: tagCode });
+    const parsed = linkTagSchema.safeParse({ code });
     if (!parsed.success) {
       Alert.alert('Validación', parsed.error.errors[0]?.message ?? 'Código inválido');
       return;
@@ -609,9 +614,34 @@ export default function App() {
       return;
     }
 
-    Alert.alert('Tag vinculado');
-    setTagCode('');
+    Alert.alert('Tag vinculado', `La placa quedó asociada vía lector ${sourceLabel}.`);
+
+    if (sourceLabel === 'QR') {
+      setQrTagCode('');
+    } else {
+      setNfcTagCode('');
+    }
+
+    setScanHint(null);
     setScreen('PetDetail');
+  };
+
+  const startScannerCapture = (sourceLabel: 'QR' | 'NFC') => {
+    setScanHint(`Esperando lectura del lector ${sourceLabel}...`);
+
+    if (sourceLabel === 'QR') {
+      setQrTagCode('');
+      qrScannerInputRef.current?.focus();
+      return;
+    }
+
+    setNfcTagCode('');
+    nfcScannerInputRef.current?.focus();
+  };
+
+  const registerScannedCode = (sourceLabel: 'QR' | 'NFC') => {
+    const scannedCode = sourceLabel === 'QR' ? qrTagCode : nfcTagCode;
+    void handleLinkTag(scannedCode, sourceLabel);
   };
 
   // (Se mantienen por si los usas en FoundResult más adelante)
@@ -1124,14 +1154,40 @@ export default function App() {
 
     return (
       <View style={styles.form}>
-        <TextInput
-          style={styles.input}
-          placeholder="Código tag"
-          value={tagCode}
-          onChangeText={setTagCode}
-          autoCapitalize="characters"
-        />
-        <Button title={loading ? 'Vinculando...' : 'Confirmar vínculo'} onPress={handleLinkTag} disabled={loading} />
+        <Card title="Vinculación por lector QR">
+          <Text style={styles.linkMethodText}>Presiona el botón para iniciar el escaneo del código QR y registrarlo.</Text>
+          <TouchableOpacity style={[styles.actionBtn, styles.linkBtn]} onPress={() => startScannerCapture('QR')} disabled={loading}>
+            <Text style={styles.linkBtnText}>{loading ? 'Vinculando...' : 'Escanear QR y registrar'}</Text>
+          </TouchableOpacity>
+          <TextInput
+            ref={qrScannerInputRef}
+            style={styles.scannerHiddenInput}
+            value={qrTagCode}
+            onChangeText={setQrTagCode}
+            onSubmitEditing={() => registerScannedCode('QR')}
+            autoCapitalize="characters"
+            blurOnSubmit={false}
+          />
+        </Card>
+
+        <Card title="Vinculación por lector NFC">
+          <Text style={styles.linkMethodText}>Presiona el botón para iniciar el escaneo del chip NFC y registrarlo.</Text>
+          <TouchableOpacity style={[styles.actionBtn, styles.linkBtn]} onPress={() => startScannerCapture('NFC')} disabled={loading}>
+            <Text style={styles.linkBtnText}>{loading ? 'Vinculando...' : 'Escanear chip NFC y registrar'}</Text>
+          </TouchableOpacity>
+          <TextInput
+            ref={nfcScannerInputRef}
+            style={styles.scannerHiddenInput}
+            value={nfcTagCode}
+            onChangeText={setNfcTagCode}
+            onSubmitEditing={() => registerScannedCode('NFC')}
+            autoCapitalize="characters"
+            blurOnSubmit={false}
+          />
+        </Card>
+
+        {scanHint ? <Text style={styles.scanHint}>{scanHint}</Text> : null}
+
         <Button title="Cancelar" onPress={() => setScreen('PetDetail')} />
       </View>
     );
@@ -1341,6 +1397,14 @@ const styles = StyleSheet.create({
 
   backBtn: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0' },
   backBtnText: { color: '#0f172a', fontWeight: '900' },
+
+  linkMethodText: { color: '#334155', lineHeight: 20 },
+  scanHint: { color: '#1e3a8a', fontWeight: '600' },
+  scannerHiddenInput: {
+    height: 0,
+    width: 0,
+    opacity: 0
+  },
 
   detailName: { fontSize: 22, fontWeight: '700' }
 });
