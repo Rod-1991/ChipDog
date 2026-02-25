@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -12,7 +12,8 @@ import {
   View,
   Image,
   Switch,
-  Linking
+  Linking,
+  Platform
 } from 'react-native';
 import Constants from 'expo-constants';
 import { createClient } from '@supabase/supabase-js';
@@ -105,10 +106,16 @@ const buildCalendarDays = (date: Date) => {
 };
 
 export default function App() {
+  const isWeb = Platform.OS === 'web';
+
   const [screen, setScreen] = useState<Screen>('Login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loginFormKey, setLoginFormKey] = useState(0);
+  const emailRef = useRef('');
+  const passwordRef = useRef('');
+  const [webAutofillDetected, setWebAutofillDetected] = useState(false);
 
   const [pets, setPets] = useState<Pet[]>([]);
   const [petSignedUrls, setPetSignedUrls] = useState<Record<number, string | null>>({});
@@ -166,6 +173,24 @@ export default function App() {
         return 'Mascota encontrada';
     }
   }, [screen, selectedPet]);
+
+  const updateEmail = (next: string) => {
+    if (isWeb) {
+      emailRef.current = next;
+      setWebAutofillDetected(Boolean(next) || Boolean(passwordRef.current));
+      return;
+    }
+    setEmail(next);
+  };
+
+  const updatePassword = (next: string) => {
+    if (isWeb) {
+      passwordRef.current = next;
+      setWebAutofillDetected(Boolean(next) || Boolean(emailRef.current));
+      return;
+    }
+    setPassword(next);
+  };
 
   const fetchPets = async () => {
     const {
@@ -346,7 +371,6 @@ export default function App() {
 
       setSelectedPet(data as Pet);
       setIsEditing(false);
-      await fetchPets();
       Alert.alert('Guardado ✅', 'Perfil actualizado');
     } finally {
       setLoading(false);
@@ -458,9 +482,14 @@ export default function App() {
       if (!mounted) return;
 
       if (session) {
-        await fetchPets();
-        if (!mounted) return;
-        setScreen('Home');
+        try {
+          setLoading(true);
+          await fetchPets();
+          if (!mounted) return;
+          setScreen('Home');
+        } finally {
+          if (mounted) setLoading(false);
+        }
       } else {
         setPets([]);
         setSelectedPet(null);
@@ -478,6 +507,7 @@ export default function App() {
   }, []);
 
   const handleFoundLookup = async () => {
+    if (loading) return;
     const code = foundCode.trim();
     if (!code) {
       Alert.alert('Ingresa el código del tag');
@@ -502,8 +532,13 @@ export default function App() {
     setScreen('FoundResult');
   };
 
+  // ✅ FIX: no hacer fetchPets/setScreen acá (evita doble trabajo). + guard loading.
   const handleLogin = async () => {
-    const parsed = loginSchema.safeParse({ email, password });
+    if (loading) return;
+
+    const loginEmail = isWeb ? emailRef.current : email;
+    const loginPassword = isWeb ? passwordRef.current : password;
+    const parsed = loginSchema.safeParse({ email: loginEmail, password: loginPassword });
     if (!parsed.success) {
       Alert.alert('Validación', parsed.error.errors[0]?.message ?? 'Datos inválidos');
       return;
@@ -518,8 +553,7 @@ export default function App() {
       return;
     }
 
-    await fetchPets();
-    setScreen('Home');
+    // ✅ onAuthStateChange se encarga de fetchPets + setScreen('Home')
   };
 
   const handleLogout = async () => {
@@ -538,10 +572,17 @@ export default function App() {
     setIsEditing(false);
     setEmail('');
     setPassword('');
+    if (isWeb) {
+      emailRef.current = '';
+      passwordRef.current = '';
+      setWebAutofillDetected(false);
+      setLoginFormKey((k) => k + 1);
+    }
     setScreen('Login');
   };
 
   const handleCreatePet = async () => {
+    if (loading) return;
     const parsed = addPetSchema.safeParse({
       ...petForm,
       birth_year: petBirthDate ? petBirthDate.getFullYear() : undefined,
@@ -585,6 +626,7 @@ export default function App() {
   };
 
   const handleLinkTag = async () => {
+    if (loading) return;
     if (!selectedPet) {
       Alert.alert('Selecciona una mascota primero');
       return;
@@ -642,22 +684,56 @@ export default function App() {
   const renderScreen = () => {
     if (screen === 'Login') {
       return (
-        <View style={styles.form}>
+        <View style={styles.form} key={loginFormKey}>
           <TextInput
-            value={email}
-            onChangeText={setEmail}
+            // ✅ WEB autofill fix: defaultValue en vez de value para no pelear con el password manager
+            {...(isWeb ? { defaultValue: emailRef.current } : { value: email })}
+            onChangeText={isWeb ? undefined : updateEmail}
+            onChange={
+              isWeb
+                ? (e) => {
+                    const anyEvent = e as any;
+                    const next = anyEvent?.nativeEvent?.text ?? anyEvent?.target?.value ?? '';
+                    updateEmail(next);
+                  }
+                : undefined
+            }
             style={styles.input}
             placeholder="Email"
             autoCapitalize="none"
+            autoCorrect={false}
             keyboardType="email-address"
+            autoComplete={isWeb ? 'off' : 'email'}
+            textContentType="username"
+            onSubmitEditing={isWeb ? undefined : handleLogin}
+            returnKeyType="next"
           />
           <TextInput
-            value={password}
-            onChangeText={setPassword}
+            {...(isWeb ? { defaultValue: passwordRef.current } : { value: password })}
+            onChangeText={isWeb ? undefined : updatePassword}
+            onChange={
+              isWeb
+                ? (e) => {
+                    const anyEvent = e as any;
+                    const next = anyEvent?.nativeEvent?.text ?? anyEvent?.target?.value ?? '';
+                    updatePassword(next);
+                  }
+                : undefined
+            }
             style={styles.input}
             placeholder="Contraseña"
             secureTextEntry
+            autoCorrect={false}
+            autoComplete={isWeb ? 'off' : 'current-password'}
+            textContentType="password"
+            onSubmitEditing={isWeb ? undefined : handleLogin}
+            returnKeyType="go"
           />
+          {isWeb && webAutofillDetected ? (
+            <Text style={styles.loginHint}>
+              Autocompletado detectado. Haz clic en "Ingresar" para continuar.
+            </Text>
+          ) : null}
           <Button title={loading ? 'Ingresando...' : 'Ingresar'} onPress={handleLogin} disabled={loading} />
           <Button title="Encontré una mascota (escaneo tag)" onPress={() => setScreen('FoundTag')} />
         </View>
@@ -717,7 +793,7 @@ export default function App() {
           <TouchableOpacity style={styles.addPetCta} onPress={() => setScreen('AddPet')}>
             <Text style={styles.addPetCtaText}>+ Agregar Mascota</Text>
           </TouchableOpacity>
-          
+
           {pets.map((pet) => (
             <TouchableOpacity
               key={pet.id}
@@ -761,8 +837,8 @@ export default function App() {
     }
 
     if (screen === 'AddPet') {
-      const monthDays = buildCalendarDays(calendarMonthDate);
-      const monthTitle = calendarMonthDate.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' });
+      const monthDays = useMemo(() => buildCalendarDays(calendarMonthDate), [calendarMonthDate]);
+      const monthTitle = useMemo(() => calendarMonthDate.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' }), [calendarMonthDate]);
 
       return (
         <View style={styles.form}>
@@ -824,11 +900,7 @@ export default function App() {
                 <View style={styles.calendarHeader}>
                   <TouchableOpacity
                     style={styles.calendarArrowBtn}
-                    onPress={() =>
-                      setCalendarMonthDate(
-                        (current) => new Date(current.getFullYear(), current.getMonth() - 1, 1)
-                      )
-                    }
+                    onPress={() => setCalendarMonthDate((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}
                   >
                     <Text style={styles.calendarArrowText}>‹</Text>
                   </TouchableOpacity>
@@ -837,11 +909,7 @@ export default function App() {
 
                   <TouchableOpacity
                     style={styles.calendarArrowBtn}
-                    onPress={() =>
-                      setCalendarMonthDate(
-                        (current) => new Date(current.getFullYear(), current.getMonth() + 1, 1)
-                      )
-                    }
+                    onPress={() => setCalendarMonthDate((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))}
                   >
                     <Text style={styles.calendarArrowText}>›</Text>
                   </TouchableOpacity>
@@ -866,9 +934,13 @@ export default function App() {
 
                     return (
                       <TouchableOpacity
-                        key={`${day ?? 'empty'}-${idx}`}
+                        key={`day-${day ?? 'null'}-${idx}`}
                         disabled={day == null}
-                        style={[styles.calendarDayBtn, day == null && styles.calendarDayBtnDisabled, isSelected && styles.calendarDayBtnSelected]}
+                        style={[
+                          styles.calendarDayBtn,
+                          day == null && styles.calendarDayBtnDisabled,
+                          isSelected && styles.calendarDayBtnSelected
+                        ]}
                         onPress={() => {
                           if (!day) return;
                           setPetBirthDate(new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth(), day));
@@ -953,11 +1025,7 @@ export default function App() {
                     : 'Si se pierde, actívalo para que te contacten.'}
                 </Text>
               </View>
-              <Switch
-                value={selectedPet.is_lost}
-                onValueChange={(v) => updatePetLostStatus(selectedPet.id, v)}
-                disabled={loading}
-              />
+              <Switch value={selectedPet.is_lost} onValueChange={(v) => updatePetLostStatus(selectedPet.id, v)} disabled={loading} />
             </View>
           </Card>
 
@@ -1037,7 +1105,6 @@ export default function App() {
             )}
           </Card>
 
-          {/* ✅ CONTACTO: sin botones en modo NO edición */}
           <Card title="Contacto">
             {isEditing ? (
               <>
@@ -1099,9 +1166,7 @@ export default function App() {
                 multiline
               />
             ) : (
-              <Text style={{ color: '#334155' }}>
-                {selectedPet.public_notes?.trim() ? selectedPet.public_notes : '—'}
-              </Text>
+              <Text style={{ color: '#334155' }}>{selectedPet.public_notes?.trim() ? selectedPet.public_notes : '—'}</Text>
             )}
           </Card>
 
@@ -1122,19 +1187,31 @@ export default function App() {
       );
     }
 
-    return (
-      <View style={styles.form}>
-        <TextInput
-          style={styles.input}
-          placeholder="Código tag"
-          value={tagCode}
-          onChangeText={setTagCode}
-          autoCapitalize="characters"
-        />
-        <Button title={loading ? 'Vinculando...' : 'Confirmar vínculo'} onPress={handleLinkTag} disabled={loading} />
-        <Button title="Cancelar" onPress={() => setScreen('PetDetail')} />
-      </View>
-    );
+    if (screen === 'LinkTag') {
+      if (!selectedPet) {
+        return (
+          <View style={styles.form}>
+            <Text>No hay mascota seleccionada.</Text>
+            <Button title="Volver" onPress={() => setScreen('Home')} />
+          </View>
+        );
+      }
+      return (
+        <View style={styles.form}>
+          <TextInput
+            style={styles.input}
+            placeholder="Código tag"
+            value={tagCode}
+            onChangeText={setTagCode}
+            autoCapitalize="characters"
+          />
+          <Button title={loading ? 'Vinculando...' : 'Confirmar vínculo'} onPress={handleLinkTag} disabled={loading} />
+          <Button title="Cancelar" onPress={() => setScreen('PetDetail')} />
+        </View>
+      );
+    }
+
+    return null;
   };
 
   return (
@@ -1154,6 +1231,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 24, fontWeight: '700', paddingHorizontal: 16, paddingTop: 16 },
 
   form: { gap: 12 },
+  loginHint: { color: '#475569', fontSize: 12, fontWeight: '600', textAlign: 'center' },
 
   input: {
     borderWidth: 1,
