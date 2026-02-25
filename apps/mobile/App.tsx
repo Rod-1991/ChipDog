@@ -305,7 +305,7 @@ export default function App() {
     }
 
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword(parsed.data);
+    const { error } = await supabase.auth.signInWithPassword(parsed.data as { email: string; password: string });
     setLoading(false);
 
     if (error) {
