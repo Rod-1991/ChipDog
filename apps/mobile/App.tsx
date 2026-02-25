@@ -10,16 +10,15 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  Image
+  Image,
+  Switch,
+  Linking
 } from 'react-native';
 import Constants from 'expo-constants';
 import { createClient } from '@supabase/supabase-js';
 import { addPetSchema, linkTagSchema, loginSchema } from '@chipdog/shared';
 import * as ImagePicker from 'expo-image-picker';
 import { Buffer } from 'buffer';
-
-// Buffer polyfill (RN / Expo)
-(global as any).Buffer = (global as any).Buffer || Buffer;
 
 type Screen = 'Login' | 'Home' | 'AddPet' | 'PetDetail' | 'LinkTag' | 'FoundTag' | 'FoundResult';
 
@@ -30,32 +29,61 @@ type Pet = {
   breed: string | null;
   is_lost: boolean;
   photo_path?: string | null;
-};
 
-type Extra = {
-  supabaseUrl: string;
-  supabaseAnonKey: string;
-};
+  color?: string | null;
+  birth_year?: number | null;
+  sex?: string | null;
+  weight_kg?: number | null;
 
-type FoundPetPublic = {
-  public_name: string;
-  species: string;
-  breed: string | null;
-  color: string | null;
+  owner_phone?: string | null;
+  owner_whatsapp?: string | null;
   public_notes?: string | null;
-  contact_phone?: string | null;
-  contact_whatsapp?: string | null;
+
+  allergies?: string | null;
+  medications?: string | null;
+  conditions?: string | null;
+
+  vet_name?: string | null;
+  vet_phone?: string | null;
 };
 
-const extra = (Constants.expoConfig?.extra ?? {}) as Partial<Extra>;
-const supabaseUrl = extra.supabaseUrl;
-const supabaseAnonKey = extra.supabaseAnonKey;
+const supabaseUrl = Constants.expoConfig?.extra?.supabaseUrl;
+const supabaseAnonKey = Constants.expoConfig?.extra?.supabaseAnonKey;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Faltan SUPABASE_URL o SUPABASE_ANON_KEY en app.config.ts');
 }
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+const normalizeStringOrNull = (v: string) => {
+  const t = (v ?? '').trim();
+  return t.length ? t : null;
+};
+
+const initialsFromName = (name: string) => {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const first = parts[0]?.[0] ?? '';
+  const second = parts[1]?.[0] ?? '';
+  return (first + second).toUpperCase() || '?';
+};
+
+// ✅ FUERA de App() para evitar re-mounts al tipear (teclado no se cierra)
+type InfoRowProps = { label: string; value?: string | null };
+const InfoRow = ({ label, value }: InfoRowProps) => (
+  <View style={styles.row}>
+    <Text style={styles.rowLabel}>{label}</Text>
+    <Text style={styles.rowValue}>{value?.trim?.() ? value : '—'}</Text>
+  </View>
+);
+
+type CardProps = { title: string; children: any };
+const Card = ({ title, children }: CardProps) => (
+  <View style={styles.card}>
+    <Text style={styles.cardHeader}>{title}</Text>
+    <View style={{ gap: 10 }}>{children}</View>
+  </View>
+);
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('Login');
@@ -66,12 +94,26 @@ export default function App() {
   const [pets, setPets] = useState<Pet[]>([]);
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
 
-  // Signed URL para mostrar foto (bucket privado)
   const [petPhotoSignedUrl, setPetPhotoSignedUrl] = useState<string | null>(null);
 
-  // Found flow
+  const [isEditing, setIsEditing] = useState(false);
+  const [petDraft, setPetDraft] = useState({
+    color: '',
+    birth_year: '',
+    sex: '',
+    weight_kg: '',
+    owner_phone: '',
+    owner_whatsapp: '',
+    public_notes: '',
+    allergies: '',
+    medications: '',
+    conditions: '',
+    vet_name: '',
+    vet_phone: ''
+  });
+
   const [foundCode, setFoundCode] = useState('');
-  const [foundPet, setFoundPet] = useState<FoundPetPublic | null>(null);
+  const [foundPet, setFoundPet] = useState<any | null>(null);
 
   const [petForm, setPetForm] = useState({
     name: '',
@@ -93,7 +135,7 @@ export default function App() {
       case 'AddPet':
         return 'Agregar mascota';
       case 'PetDetail':
-        return selectedPet ? `Detalle: ${selectedPet.name}` : 'Detalle';
+        return selectedPet ? selectedPet.name : 'Perfil';
       case 'LinkTag':
         return 'Vincular tag';
       case 'FoundTag':
@@ -141,6 +183,126 @@ export default function App() {
     setPetPhotoSignedUrl(data.signedUrl);
   };
 
+  const loadPetDetail = async (petId: number) => {
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
+    if (!user) return;
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('pets')
+        .select(
+          'id,name,species,breed,is_lost,photo_path,color,birth_year,sex,weight_kg,owner_phone,owner_whatsapp,public_notes,allergies,medications,conditions,vet_name,vet_phone'
+        )
+        .eq('id', petId)
+        .eq('owner_id', user.id)
+        .single();
+
+      if (error) {
+        Alert.alert('Error cargando perfil', error.message);
+        return;
+      }
+
+      const pet = data as Pet;
+      setSelectedPet(pet);
+      setIsEditing(false);
+
+      setPetDraft({
+        color: pet.color ?? '',
+        birth_year: pet.birth_year ? String(pet.birth_year) : '',
+        sex: pet.sex ?? '',
+        weight_kg: pet.weight_kg != null ? String(pet.weight_kg) : '',
+        owner_phone: pet.owner_phone ?? '',
+        owner_whatsapp: pet.owner_whatsapp ?? '',
+        public_notes: pet.public_notes ?? '',
+        allergies: pet.allergies ?? '',
+        medications: pet.medications ?? '',
+        conditions: pet.conditions ?? '',
+        vet_name: pet.vet_name ?? '',
+        vet_phone: pet.vet_phone ?? ''
+      });
+
+      await loadSelectedPetPhoto(pet.photo_path ?? null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updatePetLostStatus = async (petId: number, isLost: boolean) => {
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('pets').update({ is_lost: isLost }).eq('id', petId);
+      if (error) {
+        Alert.alert('Error', error.message);
+        return;
+      }
+      setSelectedPet((p) => (p ? { ...p, is_lost: isLost } : p));
+      await fetchPets();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const savePetProfile = async () => {
+    if (!selectedPet) return;
+
+    const birthYear = petDraft.birth_year.trim() ? Number(petDraft.birth_year) : null;
+    const weight = petDraft.weight_kg.trim() ? Number(petDraft.weight_kg) : null;
+
+    if (birthYear != null && (!Number.isFinite(birthYear) || birthYear < 1990 || birthYear > 2035)) {
+      Alert.alert('Validación', 'Año de nacimiento inválido');
+      return;
+    }
+    if (weight != null && (!Number.isFinite(weight) || weight <= 0 || weight > 120)) {
+      Alert.alert('Validación', 'Peso inválido');
+      return;
+    }
+
+    const payload: Partial<Pet> = {
+      color: normalizeStringOrNull(petDraft.color),
+      birth_year: birthYear,
+      sex: normalizeStringOrNull(petDraft.sex),
+      weight_kg: weight,
+
+      owner_phone: normalizeStringOrNull(petDraft.owner_phone),
+      owner_whatsapp: normalizeStringOrNull(petDraft.owner_whatsapp),
+      public_notes: normalizeStringOrNull(petDraft.public_notes),
+
+      allergies: normalizeStringOrNull(petDraft.allergies),
+      medications: normalizeStringOrNull(petDraft.medications),
+      conditions: normalizeStringOrNull(petDraft.conditions),
+
+      vet_name: normalizeStringOrNull(petDraft.vet_name),
+      vet_phone: normalizeStringOrNull(petDraft.vet_phone)
+    };
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('pets')
+        .update(payload)
+        .eq('id', selectedPet.id)
+        .select(
+          'id,name,species,breed,is_lost,photo_path,color,birth_year,sex,weight_kg,owner_phone,owner_whatsapp,public_notes,allergies,medications,conditions,vet_name,vet_phone'
+        )
+        .single();
+
+      if (error) {
+        Alert.alert('Error guardando', error.message);
+        return;
+      }
+
+      setSelectedPet(data as Pet);
+      setIsEditing(false);
+      await fetchPets();
+      Alert.alert('Guardado ✅', 'Perfil actualizado');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const pickAndUploadPetPhoto = async (petId: number) => {
     const {
       data: { user }
@@ -160,7 +322,7 @@ export default function App() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
-      quality: 0.8,
+      quality: 0.85,
       base64: true
     });
 
@@ -176,6 +338,7 @@ export default function App() {
 
     const bytes = Buffer.from(b64, 'base64');
     const uint8 = new Uint8Array(bytes);
+
     const path = `${user.id}/${petId}/main.jpg`;
 
     setLoading(true);
@@ -190,33 +353,23 @@ export default function App() {
         return;
       }
 
-      const { data: updatedRows, error: dbErr } = await supabase
+      const { data: updatedRow, error: dbErr } = await supabase
         .from('pets')
         .update({ photo_path: path })
         .eq('id', petId)
-        .select('id,photo_path');
+        .select('id,photo_path')
+        .single();
 
       if (dbErr) {
         Alert.alert('Error guardando foto', dbErr.message);
         return;
       }
 
-      const updated = updatedRows?.[0] as { id: number; photo_path: string | null } | undefined;
-      if (!updated) {
-        Alert.alert('Error', 'No se pudo actualizar la mascota (0 filas). Revisa RLS/policies.');
-        return;
-      }
-
       Alert.alert('Foto actualizada ✅');
-      await fetchPets();
 
-      if (selectedPet?.id === petId) {
-        const merged: Pet = { ...selectedPet, photo_path: updated.photo_path };
-        setSelectedPet(merged);
-        await loadSelectedPetPhoto(updated.photo_path ?? null);
-      } else {
-        await loadSelectedPetPhoto(updated.photo_path ?? null);
-      }
+      setSelectedPet((p) => (p ? { ...p, photo_path: updatedRow.photo_path } : p));
+      await loadSelectedPetPhoto(updatedRow.photo_path ?? null);
+      await fetchPets();
     } finally {
       setLoading(false);
     }
@@ -262,6 +415,7 @@ export default function App() {
         setPets([]);
         setSelectedPet(null);
         setPetPhotoSignedUrl(null);
+        setIsEditing(false);
         setScreen('Login');
       }
     });
@@ -270,6 +424,7 @@ export default function App() {
       mounted = false;
       sub.subscription.unsubscribe();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleFoundLookup = async () => {
@@ -293,7 +448,7 @@ export default function App() {
       return;
     }
 
-    setFoundPet(data[0] as FoundPetPublic);
+    setFoundPet(data[0]);
     setScreen('FoundResult');
   };
 
@@ -305,7 +460,7 @@ export default function App() {
     }
 
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword(parsed.data as { email: string; password: string });
+    const { error } = await supabase.auth.signInWithPassword(parsed.data);
     setLoading(false);
 
     if (error) {
@@ -330,6 +485,7 @@ export default function App() {
     setPets([]);
     setSelectedPet(null);
     setPetPhotoSignedUrl(null);
+    setIsEditing(false);
     setEmail('');
     setPassword('');
     setScreen('Login');
@@ -401,6 +557,31 @@ export default function App() {
     Alert.alert('Tag vinculado');
     setTagCode('');
     setScreen('PetDetail');
+  };
+
+  // (Se mantienen por si los usas en FoundResult más adelante)
+  const openWhatsApp = async (phone: string) => {
+    const digits = phone.replace(/[^\d+]/g, '');
+    if (!digits) return;
+    const url = `https://wa.me/${digits.replace('+', '')}`;
+    const can = await Linking.canOpenURL(url);
+    if (!can) {
+      Alert.alert('WhatsApp', 'No pude abrir WhatsApp en este dispositivo.');
+      return;
+    }
+    Linking.openURL(url);
+  };
+
+  const openTel = async (phone: string) => {
+    const digits = phone.replace(/[^\d+]/g, '');
+    if (!digits) return;
+    const url = `tel:${digits}`;
+    const can = await Linking.canOpenURL(url);
+    if (!can) {
+      Alert.alert('Llamar', 'No pude abrir el dialer.');
+      return;
+    }
+    Linking.openURL(url);
   };
 
   const renderScreen = () => {
@@ -480,18 +661,24 @@ export default function App() {
             <TouchableOpacity
               key={pet.id}
               onPress={async () => {
-                setSelectedPet(pet);
-                await loadSelectedPetPhoto(pet.photo_path ?? null);
+                await loadPetDetail(pet.id);
                 setScreen('PetDetail');
               }}
-              style={styles.card}
+              style={styles.listCard}
             >
-              <Text style={styles.cardTitle}>{pet.name}</Text>
-              <Text>
-                {pet.species}
-                {pet.breed ? ` · ${pet.breed}` : ''}
-              </Text>
-              <Text>{pet.is_lost ? 'Perdido' : 'En casa'}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardTitle}>{pet.name}</Text>
+                <Text style={{ color: '#475569' }}>
+                  {pet.species}
+                  {pet.breed ? ` · ${pet.breed}` : ''}
+                </Text>
+              </View>
+
+              <View style={[styles.badge, pet.is_lost ? styles.badgeDanger : styles.badgeOk]}>
+                <Text style={[styles.badgeText, pet.is_lost ? styles.badgeTextDanger : styles.badgeTextOk]}>
+                  {pet.is_lost ? 'Perdido' : 'En casa'}
+                </Text>
+              </View>
             </TouchableOpacity>
           ))}
         </View>
@@ -546,45 +733,237 @@ export default function App() {
     }
 
     if (screen === 'PetDetail') {
+      if (!selectedPet) {
+        return (
+          <View style={styles.form}>
+            <Text>No hay mascota seleccionada.</Text>
+            <Button title="Volver" onPress={() => setScreen('Home')} />
+          </View>
+        );
+      }
+
+      const statusLabel = selectedPet.is_lost ? 'Perdido' : 'En casa';
+      const badgeStyle = selectedPet.is_lost ? styles.badgeDanger : styles.badgeOk;
+      const badgeTextStyle = selectedPet.is_lost ? styles.badgeTextDanger : styles.badgeTextOk;
+
       return (
-        <View style={styles.form}>
-          {selectedPet ? (
-            <>
-              <Text style={styles.detailName}>{selectedPet.name}</Text>
-              <Text>Especie: {selectedPet.species}</Text>
-              <Text>Raza: {selectedPet.breed ?? 'N/D'}</Text>
-
-              <Text style={{ marginTop: 8, color: '#64748b' }}>
-                photo_path: {selectedPet.photo_path ?? '(vacío)'}
-              </Text>
-
+        <View style={{ gap: 14 }}>
+          <View style={styles.profileHeader}>
+            <View style={styles.avatarWrap}>
               {petPhotoSignedUrl ? (
-                <Image
-                  source={{ uri: petPhotoSignedUrl }}
-                  style={{ width: 220, height: 220, borderRadius: 12, marginTop: 12 }}
-                  resizeMode="cover"
-                />
+                <Image source={{ uri: petPhotoSignedUrl }} style={styles.avatar} resizeMode="cover" />
               ) : (
-                <Text style={{ marginTop: 8, color: '#64748b' }}>Sin foto aún</Text>
+                <View style={[styles.avatar, styles.avatarPlaceholder]}>
+                  <Text style={styles.avatarInitials}>{initialsFromName(selectedPet.name)}</Text>
+                </View>
               )}
+            </View>
 
-              <Button title="Vincular tag" onPress={() => setScreen('LinkTag')} />
-              <Button
-                title={loading ? 'Subiendo...' : 'Subir foto'}
-                onPress={() => pickAndUploadPetPhoto(selectedPet.id)}
+            <View style={{ flex: 1, gap: 6 }}>
+              <Text style={styles.profileName}>{selectedPet.name}</Text>
+              <Text style={styles.profileSub}>
+                {selectedPet.species}
+                {selectedPet.breed ? ` · ${selectedPet.breed}` : ''}
+              </Text>
+              <View style={[styles.badge, badgeStyle, { alignSelf: 'flex-start' }]}>
+                <Text style={[styles.badgeText, badgeTextStyle]}>{statusLabel}</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.actionBtnPrimary]}
+              onPress={() => pickAndUploadPetPhoto(selectedPet.id)}
+              disabled={loading}
+            >
+              <Text style={styles.actionBtnPrimaryText}>{loading ? 'Subiendo...' : 'Cambiar foto'}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.actionBtn, styles.actionBtnGhost]} onPress={() => setIsEditing((v) => !v)}>
+              <Text style={styles.actionBtnGhostText}>{isEditing ? 'Cancelar' : 'Editar'}</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Card title="Estado">
+            <View style={styles.switchRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontWeight: '600' }}>{selectedPet.is_lost ? 'Marcado como perdido' : 'En casa'}</Text>
+                <Text style={{ color: '#64748b', marginTop: 2 }}>
+                  {selectedPet.is_lost
+                    ? 'Alguien que escanee el tag verá el contacto.'
+                    : 'Si se pierde, actívalo para que te contacten.'}
+                </Text>
+              </View>
+              <Switch
+                value={selectedPet.is_lost}
+                onValueChange={(v) => updatePetLostStatus(selectedPet.id, v)}
                 disabled={loading}
               />
-            </>
+            </View>
+          </Card>
+
+          <Card title="Información">
+            {isEditing ? (
+              <>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Color (ej: Negro con blanco)"
+                  value={petDraft.color}
+                  onChangeText={(v) => setPetDraft((p) => ({ ...p, color: v }))}
+                />
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TextInput
+                    style={[styles.input, { flex: 1 }]}
+                    placeholder="Año nac."
+                    keyboardType="number-pad"
+                    value={petDraft.birth_year}
+                    onChangeText={(v) => setPetDraft((p) => ({ ...p, birth_year: v }))}
+                  />
+                  <TextInput
+                    style={[styles.input, { flex: 1 }]}
+                    placeholder="Sexo (M/H)"
+                    value={petDraft.sex}
+                    onChangeText={(v) => setPetDraft((p) => ({ ...p, sex: v }))}
+                  />
+                </View>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Peso (kg)"
+                  keyboardType="decimal-pad"
+                  value={petDraft.weight_kg}
+                  onChangeText={(v) => setPetDraft((p) => ({ ...p, weight_kg: v }))}
+                />
+              </>
+            ) : (
+              <>
+                <InfoRow label="Color" value={selectedPet.color ?? null} />
+                <InfoRow label="Año nac." value={selectedPet.birth_year ? String(selectedPet.birth_year) : null} />
+                <InfoRow label="Sexo" value={selectedPet.sex ?? null} />
+                <InfoRow label="Peso" value={selectedPet.weight_kg != null ? `${selectedPet.weight_kg} kg` : null} />
+              </>
+            )}
+          </Card>
+
+          <Card title="Salud">
+            {isEditing ? (
+              <>
+                <TextInput
+                  style={[styles.input, styles.multiline]}
+                  placeholder="Alergias (opcional)"
+                  value={petDraft.allergies}
+                  onChangeText={(v) => setPetDraft((p) => ({ ...p, allergies: v }))}
+                  multiline
+                />
+                <TextInput
+                  style={[styles.input, styles.multiline]}
+                  placeholder="Medicamentos (opcional)"
+                  value={petDraft.medications}
+                  onChangeText={(v) => setPetDraft((p) => ({ ...p, medications: v }))}
+                  multiline
+                />
+                <TextInput
+                  style={[styles.input, styles.multiline]}
+                  placeholder="Condiciones (opcional)"
+                  value={petDraft.conditions}
+                  onChangeText={(v) => setPetDraft((p) => ({ ...p, conditions: v }))}
+                  multiline
+                />
+              </>
+            ) : (
+              <>
+                <InfoRow label="Alergias" value={selectedPet.allergies ?? null} />
+                <InfoRow label="Medicamentos" value={selectedPet.medications ?? null} />
+                <InfoRow label="Condiciones" value={selectedPet.conditions ?? null} />
+              </>
+            )}
+          </Card>
+
+          {/* ✅ CONTACTO: sin botones en modo NO edición */}
+          <Card title="Contacto">
+            {isEditing ? (
+              <>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Teléfono (ej: +569...)"
+                  value={petDraft.owner_phone}
+                  onChangeText={(v) => setPetDraft((p) => ({ ...p, owner_phone: v }))}
+                  autoCapitalize="none"
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="WhatsApp (ej: +569...)"
+                  value={petDraft.owner_whatsapp}
+                  onChangeText={(v) => setPetDraft((p) => ({ ...p, owner_whatsapp: v }))}
+                  autoCapitalize="none"
+                />
+              </>
+            ) : (
+              <>
+                <InfoRow label="Teléfono" value={selectedPet.owner_phone ?? null} />
+                <InfoRow label="WhatsApp" value={selectedPet.owner_whatsapp ?? null} />
+              </>
+            )}
+          </Card>
+
+          <Card title="Veterinario">
+            {isEditing ? (
+              <>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Nombre vet (opcional)"
+                  value={petDraft.vet_name}
+                  onChangeText={(v) => setPetDraft((p) => ({ ...p, vet_name: v }))}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Teléfono vet (opcional)"
+                  value={petDraft.vet_phone}
+                  onChangeText={(v) => setPetDraft((p) => ({ ...p, vet_phone: v }))}
+                  autoCapitalize="none"
+                />
+              </>
+            ) : (
+              <>
+                <InfoRow label="Nombre" value={selectedPet.vet_name ?? null} />
+                <InfoRow label="Teléfono" value={selectedPet.vet_phone ?? null} />
+              </>
+            )}
+          </Card>
+
+          <Card title="Notas públicas (lo que ve quien encuentra)">
+            {isEditing ? (
+              <TextInput
+                style={[styles.input, styles.multiline]}
+                placeholder="Ej: No se deja tocar / necesita medicamento / muy miedoso..."
+                value={petDraft.public_notes}
+                onChangeText={(v) => setPetDraft((p) => ({ ...p, public_notes: v }))}
+                multiline
+              />
+            ) : (
+              <Text style={{ color: '#334155' }}>
+                {selectedPet.public_notes?.trim() ? selectedPet.public_notes : '—'}
+              </Text>
+            )}
+          </Card>
+
+          {isEditing ? (
+            <TouchableOpacity style={[styles.actionBtn, styles.saveBtn]} onPress={savePetProfile} disabled={loading}>
+              <Text style={styles.saveBtnText}>{loading ? 'Guardando...' : 'Guardar cambios'}</Text>
+            </TouchableOpacity>
           ) : (
-            <Text>No hay mascota seleccionada.</Text>
+            <TouchableOpacity style={[styles.actionBtn, styles.linkBtn]} onPress={() => setScreen('LinkTag')}>
+              <Text style={styles.linkBtnText}>Vincular tag</Text>
+            </TouchableOpacity>
           )}
 
-          <Button title="Volver" onPress={() => setScreen('Home')} />
+          <TouchableOpacity style={[styles.actionBtn, styles.backBtn]} onPress={() => setScreen('Home')}>
+            <Text style={styles.backBtnText}>Volver</Text>
+          </TouchableOpacity>
         </View>
       );
     }
 
-    // LinkTag (default)
     return (
       <View style={styles.form}>
         <TextInput
@@ -603,7 +982,9 @@ export default function App() {
   return (
     <SafeAreaView style={styles.container}>
       <Text style={styles.title}>{title}</Text>
-      <ScrollView contentContainerStyle={styles.scroll}>{renderScreen()}</ScrollView>
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        {renderScreen()}
+      </ScrollView>
       {loading && <ActivityIndicator style={styles.loader} />}
     </SafeAreaView>
   );
@@ -611,24 +992,108 @@ export default function App() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
-  scroll: { padding: 16 },
+  scroll: { padding: 16, paddingBottom: 28 },
   title: { fontSize: 24, fontWeight: '700', paddingHorizontal: 16, paddingTop: 16 },
+
   form: { gap: 12 },
+
   input: {
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 8,
-    padding: 10,
-    backgroundColor: '#fff'
-  },
-  card: {
     borderWidth: 1,
     borderColor: '#cbd5e1',
     borderRadius: 10,
     padding: 12,
-    backgroundColor: '#fff'
+    backgroundColor: '#fff',
+    color: '#0f172a'
   },
-  cardTitle: { fontSize: 18, fontWeight: '600' },
-  detailName: { fontSize: 22, fontWeight: '700' },
-  loader: { marginBottom: 24 }
+  multiline: { minHeight: 90, textAlignVertical: 'top' },
+
+  loader: { marginBottom: 24 },
+
+  listCard: {
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 14,
+    padding: 14,
+    backgroundColor: '#fff',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10
+  },
+  cardTitle: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
+
+  profileHeader: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 14,
+    flexDirection: 'row',
+    gap: 14,
+    alignItems: 'center'
+  },
+  avatarWrap: {
+    width: 92,
+    height: 92,
+    borderRadius: 18,
+    overflow: 'hidden'
+  },
+  avatar: {
+    width: 92,
+    height: 92,
+    borderRadius: 18
+  },
+  avatarPlaceholder: {
+    backgroundColor: '#0f172a',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  avatarInitials: { color: '#fff', fontSize: 26, fontWeight: '800', letterSpacing: 1 },
+  profileName: { fontSize: 22, fontWeight: '800', color: '#0f172a' },
+  profileSub: { color: '#475569', fontSize: 14, fontWeight: '600' },
+
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 14
+  },
+  cardHeader: { fontSize: 14, fontWeight: '800', color: '#0f172a', marginBottom: 10 },
+
+  row: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
+  rowLabel: { color: '#64748b', fontWeight: '700' },
+  rowValue: { color: '#0f172a', fontWeight: '700', flexShrink: 1, textAlign: 'right' },
+
+  switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+
+  badge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1 },
+  badgeText: { fontSize: 12, fontWeight: '900' },
+  badgeOk: { backgroundColor: '#ecfeff', borderColor: '#06b6d4' },
+  badgeDanger: { backgroundColor: '#fff1f2', borderColor: '#fb7185' },
+  badgeTextOk: { color: '#0e7490' },
+  badgeTextDanger: { color: '#be123c' },
+
+  actionRow: { flexDirection: 'row', gap: 10 },
+  actionBtn: {
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  actionBtnPrimary: { backgroundColor: '#0f172a' },
+  actionBtnPrimaryText: { color: '#fff', fontWeight: '900' },
+  actionBtnGhost: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#cbd5e1' },
+  actionBtnGhostText: { color: '#0f172a', fontWeight: '900' },
+
+  saveBtn: { backgroundColor: '#16a34a' },
+  saveBtnText: { color: '#fff', fontWeight: '900', fontSize: 16 },
+
+  linkBtn: { backgroundColor: '#2563eb' },
+  linkBtnText: { color: '#fff', fontWeight: '900', fontSize: 16 },
+
+  backBtn: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0' },
+  backBtnText: { color: '#0f172a', fontWeight: '900' },
+
+  detailName: { fontSize: 22, fontWeight: '700' }
 });

@@ -1,11 +1,12 @@
 {
   "compilerOptions": {
     "noEmit": true,
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    "skipLibCheck": true
   },
   "include": [
     "**/*.ts",
     "**/*.tsx"
   ],
-  "extends": "expo/tsconfig.base"
+  "extends": "../../node_modules/expo/tsconfig.base"
 }
