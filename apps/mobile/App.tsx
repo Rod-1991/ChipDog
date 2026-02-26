@@ -12,7 +12,8 @@ import {
   View,
   Image,
   Switch,
-  Linking
+  Linking,
+  Modal
 } from 'react-native';
 import Constants from 'expo-constants';
 import { createClient } from '@supabase/supabase-js';
@@ -93,6 +94,42 @@ const formatBirthDate = (date: Date) => {
   return `${day}/${month}/${date.getFullYear()}`;
 };
 
+type ExpoCameraModule = {
+  CameraView: any;
+  useCameraPermissions: () => [
+    { granted: boolean } | null,
+    () => Promise<{ granted: boolean }>
+  ];
+};
+
+type NfcManagerModule = {
+  start: () => Promise<void>;
+  isSupported: () => Promise<boolean>;
+  requestTechnology: (tech: string) => Promise<void>;
+  getTag: () => Promise<{ id?: string; serialNumber?: string; ndefMessage?: Array<{ payload?: number[] }> } | null>;
+  cancelTechnologyRequest: () => Promise<void>;
+  NfcTech: { Ndef: string };
+};
+
+const getExpoCameraModule = (): ExpoCameraModule | null => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require('expo-camera') as ExpoCameraModule;
+  } catch (error) {
+    return null;
+  }
+};
+
+const getNfcManagerModule = (): NfcManagerModule | null => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const module = require('react-native-nfc-manager');
+    return (module.default ?? module) as NfcManagerModule;
+  } catch (error) {
+    return null;
+  }
+};
+
 const buildCalendarDays = (date: Date) => {
   const firstDay = new Date(date.getFullYear(), date.getMonth(), 1);
   const firstWeekday = (firstDay.getDay() + 6) % 7;
@@ -149,9 +186,12 @@ export default function App() {
   const [qrTagCode, setQrTagCode] = useState('');
   const [nfcTagCode, setNfcTagCode] = useState('');
   const [scanHint, setScanHint] = useState<string | null>(null);
+  const [qrScannerVisible, setQrScannerVisible] = useState(false);
+  const [isNfcScanning, setIsNfcScanning] = useState(false);
 
-  const qrScannerInputRef = useRef<TextInput | null>(null);
-  const nfcScannerInputRef = useRef<TextInput | null>(null);
+  const cameraModule = useMemo(() => getExpoCameraModule(), []);
+  const [cameraPermission, requestCameraPermission] =
+    cameraModule?.useCameraPermissions?.() ?? [null, async () => ({ granted: false })];
 
   const title = useMemo(() => {
     switch (screen) {
@@ -626,22 +666,96 @@ export default function App() {
     setScreen('PetDetail');
   };
 
-  const startScannerCapture = (sourceLabel: 'QR' | 'NFC') => {
-    setScanHint(`Esperando lectura del lector ${sourceLabel}...`);
-
-    if (sourceLabel === 'QR') {
-      setQrTagCode('');
-      qrScannerInputRef.current?.focus();
+  const handleQrScannerPress = async () => {
+    if (!cameraModule) {
+      Alert.alert('Lector QR no disponible', 'No se encontró el módulo de cámara. Instala expo-camera para habilitar el escaneo QR.');
       return;
     }
 
-    setNfcTagCode('');
-    nfcScannerInputRef.current?.focus();
+    const currentPermission = cameraPermission;
+    let granted = currentPermission?.granted ?? false;
+
+    if (!granted) {
+      const requested = await requestCameraPermission();
+      granted = requested.granted;
+    }
+
+    if (!granted) {
+      Alert.alert('Permiso de cámara', 'Debes permitir acceso a la cámara para escanear QR.');
+      return;
+    }
+
+    setScanHint('Apunta la cámara al QR de la placa para vincularla.');
+    setQrScannerVisible(true);
   };
 
-  const registerScannedCode = (sourceLabel: 'QR' | 'NFC') => {
-    const scannedCode = sourceLabel === 'QR' ? qrTagCode : nfcTagCode;
-    void handleLinkTag(scannedCode, sourceLabel);
+  const handleQrScanned = (payload: { data?: string }) => {
+    const code = payload?.data?.trim() ?? '';
+    if (!code || loading) return;
+
+    setQrTagCode(code);
+    setQrScannerVisible(false);
+    void handleLinkTag(code, 'QR');
+  };
+
+  const extractNfcCode = (tag: { id?: string; serialNumber?: string; ndefMessage?: Array<{ payload?: number[] }> } | null) => {
+    if (!tag) return '';
+
+    if (tag.serialNumber?.trim()) return tag.serialNumber.trim();
+    if (tag.id?.trim()) return tag.id.trim();
+
+    const payload = tag.ndefMessage?.[0]?.payload;
+    if (!payload || payload.length <= 3) return '';
+
+    try {
+      const textBytes = payload.slice(3);
+      return Buffer.from(textBytes).toString('utf8').trim();
+    } catch (error) {
+      return '';
+    }
+  };
+
+  const handleNfcScannerPress = async () => {
+    const nfcModule = getNfcManagerModule();
+    if (!nfcModule) {
+      Alert.alert('Lector NFC no disponible', 'No se encontró el módulo NFC. Instala react-native-nfc-manager para habilitar el escaneo NFC.');
+      return;
+    }
+
+    setIsNfcScanning(true);
+    setScanHint('Acerca la placa al lector NFC para leer el chip.');
+
+    try {
+      await nfcModule.start();
+      const supported = await nfcModule.isSupported();
+      if (!supported) {
+        Alert.alert('NFC no soportado', 'Este dispositivo no soporta lectura NFC.');
+        return;
+      }
+
+      await nfcModule.requestTechnology(nfcModule.NfcTech.Ndef);
+      const tag = await nfcModule.getTag();
+      const code = extractNfcCode(tag);
+
+      if (!code) {
+        Alert.alert('Lectura NFC', 'No se pudo obtener un código válido desde el chip NFC.');
+        return;
+      }
+
+      setNfcTagCode(code);
+      await handleLinkTag(code, 'NFC');
+    } catch (error: any) {
+      if (error?.message && !String(error.message).toLowerCase().includes('cancel')) {
+        Alert.alert('Lectura NFC', 'Ocurrió un error al leer el chip NFC.');
+      }
+    } finally {
+      try {
+        await nfcModule.cancelTechnologyRequest();
+      } catch (error) {
+        // sin-op
+      }
+      setIsNfcScanning(false);
+    }
   };
 
   // (Se mantienen por si los usas en FoundResult más adelante)
@@ -1155,71 +1269,38 @@ export default function App() {
     return (
       <View style={styles.form}>
         <Card title="Vinculación por lector QR">
-          <Text style={styles.linkMethodText}>Presiona el botón para iniciar el escaneo del código QR y registrarlo.</Text>
-          <TouchableOpacity style={[styles.actionBtn, styles.linkBtn]} onPress={() => startScannerCapture('QR')} disabled={loading}>
-            <Text style={styles.linkBtnText}>{loading ? 'Vinculando...' : 'Escanear QR y registrar'}</Text>
+          <Text style={styles.linkMethodText}>Presiona el botón para abrir la cámara y escanear el código QR de la placa.</Text>
+          <TouchableOpacity style={[styles.actionBtn, styles.linkBtn]} onPress={handleQrScannerPress} disabled={loading}>
+            <Text style={styles.linkBtnText}>{loading ? 'Vinculando...' : 'Abrir cámara y escanear QR'}</Text>
           </TouchableOpacity>
-          <TextInput
-            ref={qrScannerInputRef}
-            style={styles.scannerHiddenInput}
-            value={qrTagCode}
-            onChangeText={setQrTagCode}
-            onSubmitEditing={() => registerScannedCode('QR')}
-            autoCapitalize="characters"
-            blurOnSubmit={false}
-          <Text style={styles.linkMethodText}>
-            Escanea el QR de la placa o pega el código leído por el lector.
-          </Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Código leído por QR"
-            value={qrTagCode}
-            onChangeText={setQrTagCode}
-            autoCapitalize="characters"
-          />
-          <Button
-            title={loading ? 'Vinculando...' : 'Confirmar vínculo por QR'}
-            onPress={() => handleLinkTag(qrTagCode, 'QR')}
-            disabled={loading}
-          />
+          {qrTagCode ? <Text style={styles.scanResult}>Último QR leído: {qrTagCode}</Text> : null}
         </Card>
 
         <Card title="Vinculación por lector NFC">
-          <Text style={styles.linkMethodText}>Presiona el botón para iniciar el escaneo del chip NFC y registrarlo.</Text>
-          <TouchableOpacity style={[styles.actionBtn, styles.linkBtn]} onPress={() => startScannerCapture('NFC')} disabled={loading}>
-            <Text style={styles.linkBtnText}>{loading ? 'Vinculando...' : 'Escanear chip NFC y registrar'}</Text>
+          <Text style={styles.linkMethodText}>Presiona el botón para detectar y leer el chip NFC cercano.</Text>
+          <TouchableOpacity style={[styles.actionBtn, styles.linkBtn]} onPress={handleNfcScannerPress} disabled={loading || isNfcScanning}>
+            <Text style={styles.linkBtnText}>{isNfcScanning ? 'Leyendo chip NFC...' : loading ? 'Vinculando...' : 'Escanear chip NFC'}</Text>
           </TouchableOpacity>
-          <TextInput
-            ref={nfcScannerInputRef}
-            style={styles.scannerHiddenInput}
-            value={nfcTagCode}
-            onChangeText={setNfcTagCode}
-            onSubmitEditing={() => registerScannedCode('NFC')}
-            autoCapitalize="characters"
-            blurOnSubmit={false}
-          />
+          {nfcTagCode ? <Text style={styles.scanResult}>Último chip leído: {nfcTagCode}</Text> : null}
         </Card>
 
         {scanHint ? <Text style={styles.scanHint}>{scanHint}</Text> : null}
 
-          <Text style={styles.linkMethodText}>
-            Acerca la placa al lector NFC y confirma con el código detectado.
-          </Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Código leído por NFC"
-            value={nfcTagCode}
-            onChangeText={setNfcTagCode}
-            autoCapitalize="characters"
-          />
-          <Button
-            title={loading ? 'Vinculando...' : 'Confirmar vínculo por NFC'}
-            onPress={() => handleLinkTag(nfcTagCode, 'NFC')}
-            disabled={loading}
-          />
-        </Card>
-
         <Button title="Cancelar" onPress={() => setScreen('PetDetail')} />
+
+        <Modal visible={qrScannerVisible} transparent animationType="slide" onRequestClose={() => setQrScannerVisible(false)}>
+          <View style={styles.qrModalBackdrop}>
+            <View style={styles.qrModalCard}>
+              <Text style={styles.qrModalTitle}>Escáner QR</Text>
+              {cameraModule ? (
+                <cameraModule.CameraView style={styles.qrCamera} facing="back" barcodeScannerSettings={{ barcodeTypes: ['qr'] }} onBarcodeScanned={handleQrScanned} />
+              ) : (
+                <Text style={styles.linkMethodText}>No hay cámara disponible para escaneo.</Text>
+              )}
+              <Button title="Cerrar" onPress={() => setQrScannerVisible(false)} />
+            </View>
+          </View>
+        </Modal>
       </View>
     );
   };
@@ -1431,10 +1512,25 @@ const styles = StyleSheet.create({
 
   linkMethodText: { color: '#334155', lineHeight: 20 },
   scanHint: { color: '#1e3a8a', fontWeight: '600' },
-  scannerHiddenInput: {
-    height: 0,
-    width: 0,
-    opacity: 0
+  scanResult: { color: '#0f172a', fontWeight: '700' },
+  qrModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.5)',
+    justifyContent: 'center',
+    padding: 16
+  },
+  qrModalCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 12,
+    gap: 12
+  },
+  qrModalTitle: { color: '#0f172a', fontSize: 18, fontWeight: '800' },
+  qrCamera: {
+    width: '100%',
+    height: 340,
+    borderRadius: 12,
+    overflow: 'hidden'
   },
 
   detailName: { fontSize: 22, fontWeight: '700' }
