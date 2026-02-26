@@ -20,7 +20,28 @@ import { addPetSchema, linkTagSchema, loginSchema } from '@chipdog/shared';
 import * as ImagePicker from 'expo-image-picker';
 import { Buffer } from 'buffer';
 
-type Screen = 'Login' | 'Home' | 'AddPet' | 'PetDetail' | 'LinkTag' | 'FoundTag' | 'FoundResult';
+type Screen =
+  | 'Login'
+  | 'Home'
+  | 'AddPet'
+  | 'PetDetail'
+  | 'PetInfo'
+  | 'PetContacts'
+  | 'LinkTag'
+  | 'FoundTag'
+  | 'FoundResult';
+
+type Contact = {
+  id: string;
+  name: string;
+  phone: string;
+};
+
+type ExtraField = {
+  id: string;
+  label: string;
+  value: string;
+};
 
 type Pet = {
   id: number;
@@ -31,6 +52,7 @@ type Pet = {
   photo_url?: string | null;
 
   color?: string | null;
+  birth_date?: string | null;
   birth_year?: number | null;
   sex?: string | null;
   weight_kg?: number | null;
@@ -45,6 +67,9 @@ type Pet = {
 
   vet_name?: string | null;
   vet_phone?: string | null;
+
+  owner_contacts?: Contact[] | null;
+  extra_info_fields?: ExtraField[] | null;
 };
 
 const supabaseUrl = Constants.expoConfig?.extra?.supabaseUrl;
@@ -59,6 +84,27 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 const normalizeStringOrNull = (v: string) => {
   const t = (v ?? '').trim();
   return t.length ? t : null;
+};
+
+const parseJsonArrayField = <T,>(value: unknown): T[] => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value as T[];
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? (parsed as T[]) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+};
+
+const isValidDateString = (value: string | null | undefined) => {
+  if (!value) return false;
+  return !Number.isNaN(Date.parse(value));
 };
 
 const initialsFromName = (name: string) => {
@@ -119,7 +165,7 @@ export default function App() {
   const [isEditing, setIsEditing] = useState(false);
   const [petDraft, setPetDraft] = useState({
     color: '',
-    birth_year: '',
+    birth_date: '',
     sex: '',
     weight_kg: '',
     owner_phone: '',
@@ -129,7 +175,9 @@ export default function App() {
     medications: '',
     conditions: '',
     vet_name: '',
-    vet_phone: ''
+    vet_phone: '',
+    owner_contacts: [] as Contact[],
+    extra_info_fields: [] as ExtraField[]
   });
 
   const [foundCode, setFoundCode] = useState('');
@@ -158,6 +206,10 @@ export default function App() {
         return 'Agregar mascota';
       case 'PetDetail':
         return selectedPet ? selectedPet.name : 'Perfil';
+      case 'PetInfo':
+        return 'Información';
+      case 'PetContacts':
+        return 'Contacto';
       case 'LinkTag':
         return 'Vincular tag';
       case 'FoundTag':
@@ -244,7 +296,7 @@ export default function App() {
       const { data, error } = await supabase
         .from('pets')
         .select(
-          'id,name,species,breed,is_lost,photo_url,color,birth_year,sex,weight_kg,owner_phone,owner_whatsapp,public_notes,allergies,medications,conditions,vet_name,vet_phone'
+          'id,name,species,breed,is_lost,photo_url,color,birth_date,birth_year,sex,weight_kg,owner_phone,owner_whatsapp,public_notes,allergies,medications,conditions,vet_name,vet_phone,owner_contacts,extra_info_fields'
         )
         .eq('id', petId)
         .eq('owner_id', user.id)
@@ -259,9 +311,28 @@ export default function App() {
       setSelectedPet(pet);
       setIsEditing(false);
 
+      const extraInfoFields = parseJsonArrayField<ExtraField>(pet.extra_info_fields)
+        .map((field, index) => ({
+          id: field?.id || `extra-${Date.now()}-${index}`,
+          label: String(field?.label ?? '').trim(),
+          value: String(field?.value ?? '').trim()
+        }))
+        .filter((field) => field.label || field.value);
+
+      const ownerContacts = parseJsonArrayField<Contact>(pet.owner_contacts)
+        .map((contact, index) => ({
+          id: contact?.id || `contact-${Date.now()}-${index}`,
+          name: String(contact?.name ?? '').trim(),
+          phone: String(contact?.phone ?? '').trim()
+        }))
+        .filter((contact) => contact.name || contact.phone);
+
+      const fallbackBirthDate =
+        pet.birth_year && Number.isFinite(Number(pet.birth_year)) ? `${String(pet.birth_year)}-01-01` : '';
+
       setPetDraft({
         color: pet.color ?? '',
-        birth_year: pet.birth_year ? String(pet.birth_year) : '',
+        birth_date: pet.birth_date ?? fallbackBirthDate,
         sex: pet.sex ?? '',
         weight_kg: pet.weight_kg != null ? String(pet.weight_kg) : '',
         owner_phone: pet.owner_phone ?? '',
@@ -271,7 +342,9 @@ export default function App() {
         medications: pet.medications ?? '',
         conditions: pet.conditions ?? '',
         vet_name: pet.vet_name ?? '',
-        vet_phone: pet.vet_phone ?? ''
+        vet_phone: pet.vet_phone ?? '',
+        owner_contacts: ownerContacts,
+        extra_info_fields: extraInfoFields
       });
 
       await loadSelectedPetPhoto(pet.photo_url ?? null);
@@ -298,11 +371,11 @@ export default function App() {
   const savePetProfile = async () => {
     if (!selectedPet) return;
 
-    const birthYear = petDraft.birth_year.trim() ? Number(petDraft.birth_year) : null;
+    const birthDate = normalizeStringOrNull(petDraft.birth_date);
     const weight = petDraft.weight_kg.trim() ? Number(petDraft.weight_kg) : null;
 
-    if (birthYear != null && (!Number.isFinite(birthYear) || birthYear < 1990 || birthYear > 2035)) {
-      Alert.alert('Validación', 'Año de nacimiento inválido');
+    if (birthDate && !isValidDateString(birthDate)) {
+      Alert.alert('Validación', 'Fecha de nacimiento inválida (usa formato YYYY-MM-DD).');
       return;
     }
     if (weight != null && (!Number.isFinite(weight) || weight <= 0 || weight > 120)) {
@@ -312,7 +385,8 @@ export default function App() {
 
     const payload: Partial<Pet> = {
       color: normalizeStringOrNull(petDraft.color),
-      birth_year: birthYear,
+      birth_date: birthDate,
+      birth_year: birthDate ? new Date(birthDate).getFullYear() : null,
       sex: normalizeStringOrNull(petDraft.sex),
       weight_kg: weight,
 
@@ -325,7 +399,9 @@ export default function App() {
       conditions: normalizeStringOrNull(petDraft.conditions),
 
       vet_name: normalizeStringOrNull(petDraft.vet_name),
-      vet_phone: normalizeStringOrNull(petDraft.vet_phone)
+      vet_phone: normalizeStringOrNull(petDraft.vet_phone),
+      owner_contacts: petDraft.owner_contacts.filter((contact) => contact.name.trim() || contact.phone.trim()),
+      extra_info_fields: petDraft.extra_info_fields.filter((field) => field.label.trim() || field.value.trim())
     };
 
     setLoading(true);
@@ -335,7 +411,7 @@ export default function App() {
         .update(payload)
         .eq('id', selectedPet.id)
         .select(
-          'id,name,species,breed,is_lost,photo_url,color,birth_year,sex,weight_kg,owner_phone,owner_whatsapp,public_notes,allergies,medications,conditions,vet_name,vet_phone'
+          'id,name,species,breed,is_lost,photo_url,color,birth_date,birth_year,sex,weight_kg,owner_phone,owner_whatsapp,public_notes,allergies,medications,conditions,vet_name,vet_phone,owner_contacts,extra_info_fields'
         )
         .single();
 
@@ -639,6 +715,48 @@ export default function App() {
     Linking.openURL(url);
   };
 
+  const addExtraInfoField = () => {
+    setPetDraft((prev) => ({
+      ...prev,
+      extra_info_fields: [...prev.extra_info_fields, { id: `extra-${Date.now()}`, label: '', value: '' }]
+    }));
+  };
+
+  const updateExtraInfoField = (id: string, key: 'label' | 'value', value: string) => {
+    setPetDraft((prev) => ({
+      ...prev,
+      extra_info_fields: prev.extra_info_fields.map((field) => (field.id === id ? { ...field, [key]: value } : field))
+    }));
+  };
+
+  const removeExtraInfoField = (id: string) => {
+    setPetDraft((prev) => ({
+      ...prev,
+      extra_info_fields: prev.extra_info_fields.filter((field) => field.id !== id)
+    }));
+  };
+
+  const addContact = () => {
+    setPetDraft((prev) => ({
+      ...prev,
+      owner_contacts: [...prev.owner_contacts, { id: `contact-${Date.now()}`, name: '', phone: '' }]
+    }));
+  };
+
+  const updateContact = (id: string, key: 'name' | 'phone', value: string) => {
+    setPetDraft((prev) => ({
+      ...prev,
+      owner_contacts: prev.owner_contacts.map((contact) => (contact.id === id ? { ...contact, [key]: value } : contact))
+    }));
+  };
+
+  const removeContact = (id: string) => {
+    setPetDraft((prev) => ({
+      ...prev,
+      owner_contacts: prev.owner_contacts.filter((contact) => contact.id !== id)
+    }));
+  };
+
   const renderScreen = () => {
     if (screen === 'Login') {
       return (
@@ -890,6 +1008,149 @@ export default function App() {
       );
     }
 
+
+    if (screen === 'PetInfo') {
+      if (!selectedPet) {
+        return (
+          <View style={styles.form}>
+            <Text>No hay mascota seleccionada.</Text>
+            <Button title="Volver" onPress={() => setScreen('Home')} />
+          </View>
+        );
+      }
+
+      return (
+        <View style={styles.form}>
+          <Card title="Información general">
+            <TextInput style={styles.input} placeholder="Color" value={petDraft.color} onChangeText={(v) => setPetDraft((p) => ({ ...p, color: v }))} />
+            <TextInput
+              style={styles.input}
+              placeholder="Fecha de nacimiento (YYYY-MM-DD)"
+              value={petDraft.birth_date}
+              onChangeText={(v) => setPetDraft((p) => ({ ...p, birth_date: v }))}
+            />
+            <TextInput style={styles.input} placeholder="Sexo" value={petDraft.sex} onChangeText={(v) => setPetDraft((p) => ({ ...p, sex: v }))} />
+            <TextInput
+              style={styles.input}
+              placeholder="Peso (kg)"
+              keyboardType="decimal-pad"
+              value={petDraft.weight_kg}
+              onChangeText={(v) => setPetDraft((p) => ({ ...p, weight_kg: v }))}
+            />
+            <TextInput
+              style={[styles.input, styles.multiline]}
+              placeholder="Alergias"
+              value={petDraft.allergies}
+              onChangeText={(v) => setPetDraft((p) => ({ ...p, allergies: v }))}
+              multiline
+            />
+            <TextInput
+              style={[styles.input, styles.multiline]}
+              placeholder="Medicamentos"
+              value={petDraft.medications}
+              onChangeText={(v) => setPetDraft((p) => ({ ...p, medications: v }))}
+              multiline
+            />
+            <TextInput
+              style={[styles.input, styles.multiline]}
+              placeholder="Condiciones"
+              value={petDraft.conditions}
+              onChangeText={(v) => setPetDraft((p) => ({ ...p, conditions: v }))}
+              multiline
+            />
+          </Card>
+
+          <Card title="Campos personalizados">
+            {petDraft.extra_info_fields.map((field) => (
+              <View key={field.id} style={styles.dynamicBlock}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Nombre del campo"
+                  value={field.label}
+                  onChangeText={(v) => updateExtraInfoField(field.id, 'label', v)}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Valor"
+                  value={field.value}
+                  onChangeText={(v) => updateExtraInfoField(field.id, 'value', v)}
+                />
+                <TouchableOpacity style={[styles.actionBtn, styles.removeBtn]} onPress={() => removeExtraInfoField(field.id)}>
+                  <Text style={styles.removeBtnText}>Eliminar campo</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+            <TouchableOpacity style={[styles.actionBtn, styles.actionBtnGhost]} onPress={addExtraInfoField}>
+              <Text style={styles.actionBtnGhostText}>+ Agregar campo</Text>
+            </TouchableOpacity>
+          </Card>
+
+          <TouchableOpacity style={[styles.actionBtn, styles.saveBtn]} onPress={savePetProfile} disabled={loading}>
+            <Text style={styles.saveBtnText}>{loading ? 'Guardando...' : 'Guardar información'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.actionBtn, styles.backBtn]} onPress={() => setScreen('PetDetail')}>
+            <Text style={styles.backBtnText}>Volver al perfil</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    if (screen === 'PetContacts') {
+      if (!selectedPet) {
+        return (
+          <View style={styles.form}>
+            <Text>No hay mascota seleccionada.</Text>
+            <Button title="Volver" onPress={() => setScreen('Home')} />
+          </View>
+        );
+      }
+
+      return (
+        <View style={styles.form}>
+          <Card title="Contacto principal">
+            <TextInput
+              style={styles.input}
+              placeholder="Teléfono principal"
+              value={petDraft.owner_phone}
+              onChangeText={(v) => setPetDraft((p) => ({ ...p, owner_phone: v }))}
+            />
+          </Card>
+
+          <Card title="Otros contactos">
+            {petDraft.owner_contacts.map((contact) => (
+              <View key={contact.id} style={styles.dynamicBlock}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Nombre"
+                  value={contact.name}
+                  onChangeText={(v) => updateContact(contact.id, 'name', v)}
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Teléfono"
+                  value={contact.phone}
+                  onChangeText={(v) => updateContact(contact.id, 'phone', v)}
+                />
+                <TouchableOpacity style={[styles.actionBtn, styles.removeBtn]} onPress={() => removeContact(contact.id)}>
+                  <Text style={styles.removeBtnText}>Eliminar contacto</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+            <TouchableOpacity style={[styles.actionBtn, styles.actionBtnGhost]} onPress={addContact}>
+              <Text style={styles.actionBtnGhostText}>+ Agregar contacto</Text>
+            </TouchableOpacity>
+          </Card>
+
+          <TouchableOpacity style={[styles.actionBtn, styles.saveBtn]} onPress={savePetProfile} disabled={loading}>
+            <Text style={styles.saveBtnText}>{loading ? 'Guardando...' : 'Guardar contactos'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.actionBtn, styles.backBtn]} onPress={() => setScreen('PetDetail')}>
+            <Text style={styles.backBtnText}>Volver al perfil</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
     if (screen === 'PetDetail') {
       if (!selectedPet) {
         return (
@@ -961,108 +1222,28 @@ export default function App() {
             </View>
           </Card>
 
-          <Card title="Información">
-            {isEditing ? (
-              <>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Color (ej: Negro con blanco)"
-                  value={petDraft.color}
-                  onChangeText={(v) => setPetDraft((p) => ({ ...p, color: v }))}
-                />
-                <View style={{ flexDirection: 'row', gap: 10 }}>
-                  <TextInput
-                    style={[styles.input, { flex: 1 }]}
-                    placeholder="Año nac."
-                    keyboardType="number-pad"
-                    value={petDraft.birth_year}
-                    onChangeText={(v) => setPetDraft((p) => ({ ...p, birth_year: v }))}
-                  />
-                  <TextInput
-                    style={[styles.input, { flex: 1 }]}
-                    placeholder="Sexo (M/H)"
-                    value={petDraft.sex}
-                    onChangeText={(v) => setPetDraft((p) => ({ ...p, sex: v }))}
-                  />
-                </View>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Peso (kg)"
-                  keyboardType="decimal-pad"
-                  value={petDraft.weight_kg}
-                  onChangeText={(v) => setPetDraft((p) => ({ ...p, weight_kg: v }))}
-                />
-              </>
-            ) : (
-              <>
-                <InfoRow label="Color" value={selectedPet.color ?? null} />
-                <InfoRow label="Año nac." value={selectedPet.birth_year ? String(selectedPet.birth_year) : null} />
-                <InfoRow label="Sexo" value={selectedPet.sex ?? null} />
-                <InfoRow label="Peso" value={selectedPet.weight_kg != null ? `${selectedPet.weight_kg} kg` : null} />
-              </>
-            )}
-          </Card>
+          <TouchableOpacity style={styles.navCardButton} onPress={() => setScreen('PetInfo')}>
+            <Card title="Información">
+              <Text style={styles.navCardDescription}>Edita datos base y salud en una pantalla dedicada.</Text>
+              <Text style={styles.navCardLink}>Abrir información ›</Text>
+            </Card>
+          </TouchableOpacity>
 
-          <Card title="Salud">
-            {isEditing ? (
-              <>
-                <TextInput
-                  style={[styles.input, styles.multiline]}
-                  placeholder="Alergias (opcional)"
-                  value={petDraft.allergies}
-                  onChangeText={(v) => setPetDraft((p) => ({ ...p, allergies: v }))}
-                  multiline
-                />
-                <TextInput
-                  style={[styles.input, styles.multiline]}
-                  placeholder="Medicamentos (opcional)"
-                  value={petDraft.medications}
-                  onChangeText={(v) => setPetDraft((p) => ({ ...p, medications: v }))}
-                  multiline
-                />
-                <TextInput
-                  style={[styles.input, styles.multiline]}
-                  placeholder="Condiciones (opcional)"
-                  value={petDraft.conditions}
-                  onChangeText={(v) => setPetDraft((p) => ({ ...p, conditions: v }))}
-                  multiline
-                />
-              </>
-            ) : (
-              <>
-                <InfoRow label="Alergias" value={selectedPet.allergies ?? null} />
-                <InfoRow label="Medicamentos" value={selectedPet.medications ?? null} />
-                <InfoRow label="Condiciones" value={selectedPet.conditions ?? null} />
-              </>
-            )}
-          </Card>
 
-          {/* ✅ CONTACTO: sin botones en modo NO edición */}
-          <Card title="Contacto">
-            {isEditing ? (
-              <>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Teléfono (ej: +569...)"
-                  value={petDraft.owner_phone}
-                  onChangeText={(v) => setPetDraft((p) => ({ ...p, owner_phone: v }))}
-                  autoCapitalize="none"
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="WhatsApp (ej: +569...)"
-                  value={petDraft.owner_whatsapp}
-                  onChangeText={(v) => setPetDraft((p) => ({ ...p, owner_whatsapp: v }))}
-                  autoCapitalize="none"
-                />
-              </>
-            ) : (
-              <>
-                <InfoRow label="Teléfono" value={selectedPet.owner_phone ?? null} />
-                <InfoRow label="WhatsApp" value={selectedPet.owner_whatsapp ?? null} />
-              </>
-            )}
-          </Card>
+          <TouchableOpacity style={styles.navCardButton} onPress={() => setScreen('PetContacts')}>
+            <Card title="Contacto">
+              <InfoRow label="Principal" value={selectedPet.owner_phone ?? null} />
+              <InfoRow
+                label="Contacto"
+                value={
+                  petDraft.owner_contacts[0]
+                    ? `${petDraft.owner_contacts[0].name || 'Sin nombre'} · ${petDraft.owner_contacts[0].phone || 'Sin teléfono'}`
+                    : null
+                }
+              />
+              <Text style={styles.navCardLink}>Administrar contactos ›</Text>
+            </Card>
+          </TouchableOpacity>
 
           <Card title="Veterinario">
             {isEditing ? (
@@ -1320,6 +1501,21 @@ const styles = StyleSheet.create({
   badgeTextOk: { color: '#0e7490' },
   badgeTextDanger: { color: '#be123c' },
 
+
+  navCardButton: { borderRadius: 16 },
+  navCardDescription: { color: '#334155', marginBottom: 4 },
+  navCardLink: { color: '#2563eb', fontWeight: '800' },
+
+  dynamicBlock: {
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    padding: 10,
+    gap: 8,
+    backgroundColor: '#f8fafc'
+  },
+  removeBtn: { backgroundColor: '#fee2e2' },
+  removeBtnText: { color: '#991b1b', fontWeight: '800' },
   actionRow: { flexDirection: 'row', gap: 10 },
   actionBtn: {
     borderRadius: 14,
