@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@chipdog/shared": "file:../../packages/shared",
-    "@supabase/supabase-js": "^2.48.1",
+    "@supabase/supabase-js": "^2.98.0",
     "dotenv": "^17.3.1",
     "expo": "^54.0.33",
     "expo-asset": "~12.0.12",
