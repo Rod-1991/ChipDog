@@ -92,10 +92,10 @@ const InfoRow = ({ label, value }: InfoRowProps) => (
   </View>
 );
 
-type CardProps = { title: string; children: any };
+type CardProps = { title?: string; children: any };
 const Card = ({ title, children }: CardProps) => (
   <View style={styles.card}>
-    <Text style={styles.cardHeader}>{title}</Text>
+    {title ? <Text style={styles.cardHeader}>{title}</Text> : null}
     <View style={{ gap: 10 }}>{children}</View>
   </View>
 );
@@ -106,6 +106,13 @@ const formatBirthDate = (date: Date) => {
   const day = String(date.getDate()).padStart(2, '0');
   const month = String(date.getMonth() + 1).padStart(2, '0');
   return `${day}/${month}/${date.getFullYear()}`;
+};
+
+const formatBirthDateShort = (date: Date) => {
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = String(date.getFullYear()).slice(-2);
+  return `${day}/${month}/${year}`;
 };
 
 const buildCalendarDays = (date: Date) => {
@@ -122,12 +129,12 @@ const buildCalendarDays = (date: Date) => {
 const parseBirthDateText = (input: string) => {
   const trimmed = input.trim();
   if (!trimmed) return null;
-  const match = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{2,4})$/);
+  const match = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{2})$/);
   if (!match) return null;
   const day = Number(match[1]);
   const month = Number(match[2]);
   const rawYear = Number(match[3]);
-  const year = match[3].length === 2 ? 2000 + rawYear : rawYear;
+  const year = 2000 + rawYear;
   const asDate = new Date(year, month - 1, day);
 
   if (
@@ -367,7 +374,7 @@ export default function App() {
     }
 
     if (petDraft.birth_date_text.trim() && !parseBirthDateText(petDraft.birth_date_text)) {
-      Alert.alert('Validación', 'Fecha inválida. Usa dd/mm/aa o dd/mm/aaaa');
+      Alert.alert('Validación', 'Fecha inválida. Usa formato dd/mm/yy');
       return;
     }
 
@@ -968,8 +975,13 @@ export default function App() {
 
       return (
         <View style={{ gap: 14 }}>
-          <TouchableOpacity style={styles.profileHeaderLarge} onPress={() => pickAndUploadPetPhoto(selectedPet.id)} disabled={loading}>
-            <View style={styles.avatarWrap}>
+          <View style={styles.profileHeaderCompact}>
+            <TouchableOpacity
+              style={styles.avatarWrap}
+              onPress={() => pickAndUploadPetPhoto(selectedPet.id)}
+              disabled={loading}
+              activeOpacity={0.85}
+            >
               {petPhotoSignedUrl ? (
                 <Image source={{ uri: petPhotoSignedUrl }} style={styles.avatar} resizeMode="cover" />
               ) : (
@@ -990,7 +1002,9 @@ export default function App() {
                 <Text style={[styles.badgeText, badgeTextStyle]}>{statusLabel}</Text>
               </View>
             </View>
+          </View>
 
+          <Card title="Estado">
             <View style={styles.switchRow}>
               <Text style={styles.switchLabel}>Activar si se pierde</Text>
               <Switch
@@ -1071,29 +1085,47 @@ export default function App() {
 
       return (
         <View style={styles.form}>
-          <Card title="Información (editable)">
-            <TextInput
-              style={styles.input}
-              placeholder="Color"
-              value={petDraft.color}
-              onChangeText={(v) => setPetDraft((p) => ({ ...p, color: v }))}
-            />
+          <Card>
+            <View style={styles.labeledInlineRow}>
+              <View style={styles.leftTitleBox}>
+                <Text style={styles.leftTitleText}>Descripción</Text>
+              </View>
+              <TextInput
+                style={[styles.input, styles.inlineValueInput]}
+                placeholder='Ej: "Café con machas blancas"'
+                value={petDraft.color}
+                onChangeText={(v) => setPetDraft((p) => ({ ...p, color: v }))}
+              />
+            </View>
+
+            <View style={styles.labeledInlineRow}>
+              <View style={styles.leftTitleBox}>
+                <Text style={styles.leftTitleText}>Fecha de nacimiento</Text>
+              </View>
+              <TextInput
+                style={[styles.input, styles.inlineValueInput]}
+                placeholder={birthDateValue ?? 'dd/mm/yy'}
+                value={petDraft.birth_date_text}
+                keyboardType="number-pad"
+                maxLength={8}
+                onChangeText={(v) => {
+                  const digits = v.replace(/\D/g, '').slice(0, 6);
+                  const part1 = digits.slice(0, 2);
+                  const part2 = digits.slice(2, 4);
+                  const part3 = digits.slice(4, 6);
+                  const next = [part1, part2, part3].filter(Boolean).join('/');
+                  setPetDraft((p) => ({ ...p, birth_date_text: next }));
+                }}
+              />
+            </View>
 
             <TouchableOpacity
-              style={[styles.input, styles.selectInput]}
+              style={styles.calendarInlineBtn}
               onPress={() => setShowProfileBirthCalendar((v) => !v)}
               activeOpacity={0.8}
             >
-              <Text style={styles.selectInputText}>{birthDateValue ?? 'Fecha de nacimiento (dd/mm/aa)'}</Text>
-              <Text style={styles.selectChevron}>{showProfileBirthCalendar ? '▴' : '▾'}</Text>
+              <Text style={styles.calendarInlineBtnText}>{showProfileBirthCalendar ? 'Cerrar calendario' : 'Abrir calendario'}</Text>
             </TouchableOpacity>
-
-            <TextInput
-              style={styles.input}
-              placeholder="O escribe manual: dd/mm/aa"
-              value={petDraft.birth_date_text}
-              onChangeText={(v) => setPetDraft((p) => ({ ...p, birth_date_text: v }))}
-            />
 
             {showProfileBirthCalendar ? (
               <View style={styles.calendarCard}>
@@ -1157,7 +1189,7 @@ export default function App() {
                             profileBirthCalendarMonth.getMonth(),
                             day
                           );
-                          setPetDraft((p) => ({ ...p, birth_date_text: formatBirthDate(chosen) }));
+                          setPetDraft((p) => ({ ...p, birth_date_text: formatBirthDateShort(chosen) }));
                           setProfileBirthCalendarMonth(chosen);
                         }}
                       >
@@ -1169,55 +1201,48 @@ export default function App() {
               </View>
             ) : null}
 
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <TextInput
-                style={[styles.input, { flex: 1 }]}
-                placeholder="Año nac."
-                keyboardType="number-pad"
-                value={petDraft.birth_year}
-                onChangeText={(v) => setPetDraft((p) => ({ ...p, birth_year: v }))}
-              />
-              <TextInput
-                style={[styles.input, { flex: 1 }]}
-                placeholder="Sexo"
-                value={petDraft.sex}
-                onChangeText={(v) => setPetDraft((p) => ({ ...p, sex: v }))}
-              />
-            </View>
-
+            <Text style={styles.sectionBlockTitle}>Alergias</Text>
             <TextInput
-              style={styles.input}
-              placeholder="Peso (kg)"
-              keyboardType="decimal-pad"
-              value={petDraft.weight_kg}
-              onChangeText={(v) => setPetDraft((p) => ({ ...p, weight_kg: v }))}
-            />
-            <TextInput
-              style={[styles.input, styles.multiline]}
+              style={[styles.input, styles.multiline, styles.largeBlockInput]}
               placeholder="Alergias"
               value={petDraft.allergies}
               onChangeText={(v) => setPetDraft((p) => ({ ...p, allergies: v }))}
               multiline
             />
+
+            <Text style={styles.sectionBlockTitle}>Medicamentos</Text>
             <TextInput
-              style={[styles.input, styles.multiline]}
+              style={[styles.input, styles.multiline, styles.largeBlockInput]}
               placeholder="Medicamentos"
               value={petDraft.medications}
               onChangeText={(v) => setPetDraft((p) => ({ ...p, medications: v }))}
               multiline
             />
+
+            <Text style={styles.sectionBlockTitle}>Condiciones</Text>
             <TextInput
-              style={[styles.input, styles.multiline]}
+              style={[styles.input, styles.multiline, styles.largeBlockInput]}
               placeholder="Condiciones"
               value={petDraft.conditions}
               onChangeText={(v) => setPetDraft((p) => ({ ...p, conditions: v }))}
               multiline
             />
+
+            <Text style={styles.sectionBlockTitle}>Veterinario</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, styles.largeBlockInput]}
               placeholder="Veterinario"
               value={petDraft.vet_name}
               onChangeText={(v) => setPetDraft((p) => ({ ...p, vet_name: v }))}
+            />
+
+            <Text style={styles.sectionBlockTitle}>Otros</Text>
+            <TextInput
+              style={[styles.input, styles.multiline, styles.largeBlockInput]}
+              placeholder="Otros"
+              value={petDraft.public_notes}
+              onChangeText={(v) => setPetDraft((p) => ({ ...p, public_notes: v }))}
+              multiline
             />
           </Card>
 
@@ -1276,13 +1301,6 @@ export default function App() {
               placeholder="Teléfono veterinario"
               value={petDraft.vet_phone}
               onChangeText={(v) => setPetDraft((p) => ({ ...p, vet_phone: v }))}
-              autoCapitalize="none"
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="WhatsApp (opcional)"
-              value={petDraft.owner_whatsapp}
-              onChangeText={(v) => setPetDraft((p) => ({ ...p, owner_whatsapp: v }))}
               autoCapitalize="none"
             />
             <TextInput
@@ -1460,13 +1478,15 @@ const styles = StyleSheet.create({
     gap: 14,
     alignItems: 'center'
   },
-  profileHeaderLarge: {
+  profileHeaderCompact: {
     backgroundColor: '#fff',
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#e2e8f0',
     padding: 14,
-    gap: 12
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14
   },
   avatarWrap: {
     width: 92,
@@ -1498,6 +1518,31 @@ const styles = StyleSheet.create({
     padding: 14
   },
   cardHeader: { fontSize: 14, fontWeight: '800', color: '#0f172a', marginBottom: 10 },
+
+  labeledInlineRow: { flexDirection: 'row', gap: 10, alignItems: 'stretch' },
+  leftTitleBox: {
+    width: 130,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+    justifyContent: 'center',
+    paddingHorizontal: 10
+  },
+  leftTitleText: { color: '#334155', fontWeight: '800', fontSize: 13 },
+  inlineValueInput: { flex: 1, marginBottom: 0 },
+  sectionBlockTitle: { color: '#334155', fontWeight: '800', marginTop: 2 },
+  largeBlockInput: { minHeight: 96 },
+
+  calendarInlineBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    backgroundColor: '#fff'
+  },
+  calendarInlineBtnText: { color: '#0f172a', fontWeight: '700' },
 
   navCard: {
     backgroundColor: '#fff',
