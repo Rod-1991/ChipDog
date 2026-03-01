@@ -997,6 +997,7 @@ export default function App() {
                 {selectedPet.species}
                 {selectedPet.breed ? ` · ${selectedPet.breed}` : ''}
               </Text>
+              <Text style={styles.changePhotoHint}>{loading ? 'Subiendo...' : 'Toca para cambiar foto'}</Text>
               <View style={[styles.badge, badgeStyle, { alignSelf: 'flex-start' }]}>
                 <Text style={[styles.badgeText, badgeTextStyle]}>{statusLabel}</Text>
               </View>
@@ -1005,21 +1006,14 @@ export default function App() {
 
           <Card title="Estado">
             <View style={styles.switchRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontWeight: '600' }}>{selectedPet.is_lost ? 'Marcado como perdido' : 'En casa'}</Text>
-                <Text style={{ color: '#64748b', marginTop: 2 }}>
-                  {selectedPet.is_lost
-                    ? 'Alguien que escanee el tag verá el contacto.'
-                    : 'Si se pierde, actívalo para que te contacten.'}
-                </Text>
-              </View>
+              <Text style={styles.switchLabel}>Activar si se pierde</Text>
               <Switch
                 value={selectedPet.is_lost}
                 onValueChange={(v) => updatePetLostStatus(selectedPet.id, v)}
                 disabled={loading}
               />
             </View>
-          </Card>
+          </TouchableOpacity>
 
           <TouchableOpacity style={styles.navCard} onPress={() => setScreen('PetVetHistory')}>
             <Text style={styles.navCardTitle}>Historial Veterinario</Text>
@@ -1513,6 +1507,8 @@ const styles = StyleSheet.create({
   avatarInitials: { color: '#fff', fontSize: 26, fontWeight: '800', letterSpacing: 1 },
   profileName: { fontSize: 22, fontWeight: '800', color: '#0f172a' },
   profileSub: { color: '#475569', fontSize: 14, fontWeight: '600' },
+  changePhotoHint: { color: '#2563eb', fontSize: 13, fontWeight: '700' },
+
 
   card: {
     backgroundColor: '#fff',
