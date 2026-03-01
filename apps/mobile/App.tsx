@@ -1092,7 +1092,7 @@ export default function App() {
               </View>
               <TextInput
                 style={[styles.input, styles.inlineValueInput]}
-                placeholder='Ej: "Café con machas blancas"'
+                placeholder='Ej: "Café con manchas blancas"'
                 value={petDraft.color}
                 onChangeText={(v) => setPetDraft((p) => ({ ...p, color: v }))}
               />
@@ -1204,7 +1204,7 @@ export default function App() {
             <Text style={styles.sectionBlockTitle}>Alergias</Text>
             <TextInput
               style={[styles.input, styles.multiline, styles.largeBlockInput]}
-              placeholder="Alergias"
+              placeholder='Ej: "Chocolate, pasto, polvo"'
               value={petDraft.allergies}
               onChangeText={(v) => setPetDraft((p) => ({ ...p, allergies: v }))}
               multiline
@@ -1213,7 +1213,7 @@ export default function App() {
             <Text style={styles.sectionBlockTitle}>Medicamentos</Text>
             <TextInput
               style={[styles.input, styles.multiline, styles.largeBlockInput]}
-              placeholder="Medicamentos"
+              placeholder='Ej: "Ibuprofeno, Paracetamol"'
               value={petDraft.medications}
               onChangeText={(v) => setPetDraft((p) => ({ ...p, medications: v }))}
               multiline
@@ -1222,7 +1222,7 @@ export default function App() {
             <Text style={styles.sectionBlockTitle}>Condiciones</Text>
             <TextInput
               style={[styles.input, styles.multiline, styles.largeBlockInput]}
-              placeholder="Condiciones"
+              placeholder='Ej: "Diabetes, Hipotiroidismo"'
               value={petDraft.conditions}
               onChangeText={(v) => setPetDraft((p) => ({ ...p, conditions: v }))}
               multiline
@@ -1231,7 +1231,7 @@ export default function App() {
             <Text style={styles.sectionBlockTitle}>Veterinario</Text>
             <TextInput
               style={[styles.input, styles.largeBlockInput]}
-              placeholder="Veterinario"
+              placeholder='Ej: "Dr. Juan Pérez"'
               value={petDraft.vet_name}
               onChangeText={(v) => setPetDraft((p) => ({ ...p, vet_name: v }))}
             />
