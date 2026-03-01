@@ -968,13 +968,8 @@ export default function App() {
 
       return (
         <View style={{ gap: 14 }}>
-          <View style={styles.profileHeaderCompact}>
-            <TouchableOpacity
-              style={styles.avatarWrap}
-              onPress={() => pickAndUploadPetPhoto(selectedPet.id)}
-              disabled={loading}
-              activeOpacity={0.85}
-            >
+          <TouchableOpacity style={styles.profileHeaderLarge} onPress={() => pickAndUploadPetPhoto(selectedPet.id)} disabled={loading}>
+            <View style={styles.avatarWrap}>
               {petPhotoSignedUrl ? (
                 <Image source={{ uri: petPhotoSignedUrl }} style={styles.avatar} resizeMode="cover" />
               ) : (
@@ -990,29 +985,21 @@ export default function App() {
                 {selectedPet.species}
                 {selectedPet.breed ? ` · ${selectedPet.breed}` : ''}
               </Text>
+              <Text style={styles.changePhotoHint}>{loading ? 'Subiendo...' : 'Toca para cambiar foto'}</Text>
               <View style={[styles.badge, badgeStyle, { alignSelf: 'flex-start' }]}>
                 <Text style={[styles.badgeText, badgeTextStyle]}>{statusLabel}</Text>
               </View>
             </View>
-          </View>
 
-          <Card title="Estado">
             <View style={styles.switchRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontWeight: '600' }}>{selectedPet.is_lost ? 'Marcado como perdido' : 'En casa'}</Text>
-                <Text style={{ color: '#64748b', marginTop: 2 }}>
-                  {selectedPet.is_lost
-                    ? 'Alguien que escanee el tag verá el contacto.'
-                    : 'Si se pierde, actívalo para que te contacten.'}
-                </Text>
-              </View>
+              <Text style={styles.switchLabel}>Activar si se pierde</Text>
               <Switch
                 value={selectedPet.is_lost}
                 onValueChange={(v) => updatePetLostStatus(selectedPet.id, v)}
                 disabled={loading}
               />
             </View>
-          </Card>
+          </TouchableOpacity>
 
           <TouchableOpacity style={styles.navCard} onPress={() => setScreen('PetVetHistory')}>
             <Text style={styles.navCardTitle}>Historial Veterinario</Text>
@@ -1085,7 +1072,6 @@ export default function App() {
       return (
         <View style={styles.form}>
           <Card title="Información (editable)">
-            <Text style={styles.fieldLabel}>Color</Text>
             <TextInput
               style={styles.input}
               placeholder="Color"
@@ -1093,22 +1079,21 @@ export default function App() {
               onChangeText={(v) => setPetDraft((p) => ({ ...p, color: v }))}
             />
 
-            <Text style={styles.fieldLabel}>Fecha de nacimiento</Text>
-            <View style={styles.dateInputRow}>
-              <TextInput
-                style={[styles.input, styles.dateInput]}
-                placeholder={birthDateValue ?? 'dd/mm/aa o dd/mm/aaaa'}
-                value={petDraft.birth_date_text}
-                onChangeText={(v) => setPetDraft((p) => ({ ...p, birth_date_text: v }))}
-              />
-              <TouchableOpacity
-                style={styles.calendarInlineBtn}
-                onPress={() => setShowProfileBirthCalendar((v) => !v)}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.calendarInlineBtnText}>{showProfileBirthCalendar ? 'Cerrar' : 'Calendario'}</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              style={[styles.input, styles.selectInput]}
+              onPress={() => setShowProfileBirthCalendar((v) => !v)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.selectInputText}>{birthDateValue ?? 'Fecha de nacimiento (dd/mm/aa)'}</Text>
+              <Text style={styles.selectChevron}>{showProfileBirthCalendar ? '▴' : '▾'}</Text>
+            </TouchableOpacity>
+
+            <TextInput
+              style={styles.input}
+              placeholder="O escribe manual: dd/mm/aa"
+              value={petDraft.birth_date_text}
+              onChangeText={(v) => setPetDraft((p) => ({ ...p, birth_date_text: v }))}
+            />
 
             {showProfileBirthCalendar ? (
               <View style={styles.calendarCard}>
@@ -1184,15 +1169,22 @@ export default function App() {
               </View>
             ) : null}
 
-            <Text style={styles.fieldLabel}>Sexo</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Sexo"
-              value={petDraft.sex}
-              onChangeText={(v) => setPetDraft((p) => ({ ...p, sex: v }))}
-            />
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TextInput
+                style={[styles.input, { flex: 1 }]}
+                placeholder="Año nac."
+                keyboardType="number-pad"
+                value={petDraft.birth_year}
+                onChangeText={(v) => setPetDraft((p) => ({ ...p, birth_year: v }))}
+              />
+              <TextInput
+                style={[styles.input, { flex: 1 }]}
+                placeholder="Sexo"
+                value={petDraft.sex}
+                onChangeText={(v) => setPetDraft((p) => ({ ...p, sex: v }))}
+              />
+            </View>
 
-            <Text style={styles.fieldLabel}>Peso</Text>
             <TextInput
               style={styles.input}
               placeholder="Peso (kg)"
@@ -1200,8 +1192,6 @@ export default function App() {
               value={petDraft.weight_kg}
               onChangeText={(v) => setPetDraft((p) => ({ ...p, weight_kg: v }))}
             />
-
-            <Text style={styles.fieldLabel}>Alergias</Text>
             <TextInput
               style={[styles.input, styles.multiline]}
               placeholder="Alergias"
@@ -1209,8 +1199,6 @@ export default function App() {
               onChangeText={(v) => setPetDraft((p) => ({ ...p, allergies: v }))}
               multiline
             />
-
-            <Text style={styles.fieldLabel}>Medicamentos</Text>
             <TextInput
               style={[styles.input, styles.multiline]}
               placeholder="Medicamentos"
@@ -1218,8 +1206,6 @@ export default function App() {
               onChangeText={(v) => setPetDraft((p) => ({ ...p, medications: v }))}
               multiline
             />
-
-            <Text style={styles.fieldLabel}>Condiciones</Text>
             <TextInput
               style={[styles.input, styles.multiline]}
               placeholder="Condiciones"
@@ -1227,8 +1213,6 @@ export default function App() {
               onChangeText={(v) => setPetDraft((p) => ({ ...p, conditions: v }))}
               multiline
             />
-
-            <Text style={styles.fieldLabel}>Veterinario</Text>
             <TextInput
               style={styles.input}
               placeholder="Veterinario"
@@ -1292,6 +1276,13 @@ export default function App() {
               placeholder="Teléfono veterinario"
               value={petDraft.vet_phone}
               onChangeText={(v) => setPetDraft((p) => ({ ...p, vet_phone: v }))}
+              autoCapitalize="none"
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="WhatsApp (opcional)"
+              value={petDraft.owner_whatsapp}
+              onChangeText={(v) => setPetDraft((p) => ({ ...p, owner_whatsapp: v }))}
               autoCapitalize="none"
             />
             <TextInput
@@ -1469,15 +1460,13 @@ const styles = StyleSheet.create({
     gap: 14,
     alignItems: 'center'
   },
-  profileHeaderCompact: {
+  profileHeaderLarge: {
     backgroundColor: '#fff',
     borderRadius: 16,
     borderWidth: 1,
     borderColor: '#e2e8f0',
     padding: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14
+    gap: 12
   },
   avatarWrap: {
     width: 92,
@@ -1498,6 +1487,8 @@ const styles = StyleSheet.create({
   avatarInitials: { color: '#fff', fontSize: 26, fontWeight: '800', letterSpacing: 1 },
   profileName: { fontSize: 22, fontWeight: '800', color: '#0f172a' },
   profileSub: { color: '#475569', fontSize: 14, fontWeight: '600' },
+  changePhotoHint: { color: '#2563eb', fontSize: 13, fontWeight: '700' },
+
 
   card: {
     backgroundColor: '#fff',
@@ -1507,19 +1498,6 @@ const styles = StyleSheet.create({
     padding: 14
   },
   cardHeader: { fontSize: 14, fontWeight: '800', color: '#0f172a', marginBottom: 10 },
-
-  fieldLabel: { color: '#334155', fontWeight: '700', marginBottom: 4 },
-  dateInputRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  dateInput: { flex: 1 },
-  calendarInlineBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    backgroundColor: '#fff'
-  },
-  calendarInlineBtnText: { color: '#0f172a', fontWeight: '700' },
 
   navCard: {
     backgroundColor: '#fff',
