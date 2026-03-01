@@ -62,6 +62,26 @@ type Pet = {
   vet_phone?: string | null;
 };
 
+type VetAttachment = {
+  id: string;
+  kind: 'photo' | 'pdf';
+  name: string;
+};
+
+type VetRecord = {
+  id: string;
+  date: string;
+  doctor: string;
+  clinic: string;
+  reason: string;
+  symptoms: string[];
+  diagnosis: string;
+  treatment: string;
+  description: string;
+  attachments: VetAttachment[];
+  referencePhotos: string[];
+};
+
 const supabaseUrl = Constants.expoConfig?.extra?.supabaseUrl;
 const supabaseAnonKey = Constants.expoConfig?.extra?.supabaseAnonKey;
 
@@ -199,6 +219,21 @@ export default function App() {
   const [profileBirthCalendarMonth, setProfileBirthCalendarMonth] = useState(() => new Date());
 
   const [tagCode, setTagCode] = useState('');
+
+  const [vetHistory, setVetHistory] = useState<VetRecord[]>([]);
+  const [showNewVetRecord, setShowNewVetRecord] = useState(false);
+  const [symptomInput, setSymptomInput] = useState('');
+  const [vetForm, setVetForm] = useState({
+    date: '',
+    doctor: '',
+    clinic: '',
+    reason: '',
+    symptoms: [] as string[],
+    diagnosis: '',
+    treatment: '',
+    description: '',
+    attachments: [] as VetAttachment[]
+  });
 
   const title = useMemo(() => {
     switch (screen) {
@@ -708,6 +743,100 @@ export default function App() {
     Linking.openURL(url);
   };
 
+  const addSymptomToForm = () => {
+    const value = symptomInput.trim();
+    if (!value) return;
+    if (vetForm.symptoms.some((s) => s.toLowerCase() === value.toLowerCase())) {
+      setSymptomInput('');
+      return;
+    }
+    setVetForm((prev) => ({ ...prev, symptoms: [...prev.symptoms, value] }));
+    setSymptomInput('');
+  };
+
+  const removeSymptomFromForm = (symptom: string) => {
+    setVetForm((prev) => ({ ...prev, symptoms: prev.symptoms.filter((item) => item !== symptom) }));
+  };
+
+  const addPhotoAttachmentToForm = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permiso requerido', 'Necesitamos permiso para acceder a tu galería.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: false,
+      quality: 0.8
+    });
+
+    if (result.canceled) return;
+
+    const asset = result.assets[0];
+    const fallback = `foto-${Date.now()}.jpg`;
+    const name = asset.fileName?.trim() || fallback;
+
+    setVetForm((prev) => ({
+      ...prev,
+      attachments: [...prev.attachments, { id: `${Date.now()}-photo`, kind: 'photo', name }]
+    }));
+  };
+
+  const addPdfAttachmentToForm = () => {
+    const defaultName = `orden-medica-${Date.now()}.pdf`;
+    setVetForm((prev) => ({
+      ...prev,
+      attachments: [...prev.attachments, { id: `${Date.now()}-pdf`, kind: 'pdf', name: defaultName }]
+    }));
+  };
+
+  const saveVetRecord = () => {
+    const date = vetForm.date.trim();
+    const reason = vetForm.reason.trim();
+
+    if (!date || !reason) {
+      Alert.alert('Validación', 'Completa al menos Fecha y Motivo para guardar el registro.');
+      return;
+    }
+
+    const newRecord: VetRecord = {
+      id: `${Date.now()}`,
+      date,
+      doctor: vetForm.doctor.trim(),
+      clinic: vetForm.clinic.trim(),
+      reason,
+      symptoms: vetForm.symptoms,
+      diagnosis: vetForm.diagnosis.trim(),
+      treatment: vetForm.treatment.trim(),
+      description: vetForm.description.trim(),
+      attachments: vetForm.attachments,
+      referencePhotos: ['Referencia clínica 1', 'Referencia clínica 2']
+    };
+
+    setVetHistory((prev) => [newRecord, ...prev]);
+    setVetForm({
+      date: '',
+      doctor: '',
+      clinic: '',
+      reason: '',
+      symptoms: [],
+      diagnosis: '',
+      treatment: '',
+      description: '',
+      attachments: []
+    });
+    setSymptomInput('');
+    setShowNewVetRecord(false);
+    Alert.alert('Guardado ✅', 'Registro clínico guardado en historial.');
+  };
+
+  const renderAttachmentChip = (item: VetAttachment) => (
+    <View key={item.id} style={styles.attachmentChip}>
+      <Text style={styles.attachmentChipText}>{item.kind === 'photo' ? '📷' : '📄'} {item.name}</Text>
+    </View>
+  );
+
   const renderScreen = () => {
     if (screen === 'Login') {
       return (
@@ -1049,11 +1178,122 @@ export default function App() {
     if (screen === 'PetVetHistory') {
       return (
         <View style={styles.form}>
-          <Card title="Historial Veterinario">
-            <Text style={{ color: '#334155' }}>
-              Aquí verás y gestionarás el historial de consultas, diagnósticos y controles de tu mascota.
-            </Text>
-          </Card>
+          <TouchableOpacity style={[styles.actionBtn, styles.linkBtn]} onPress={() => setShowNewVetRecord((v) => !v)}>
+            <Text style={styles.linkBtnText}>{showNewVetRecord ? 'Cancelar nuevo registro' : 'Nuevo Registro'}</Text>
+          </TouchableOpacity>
+
+          {showNewVetRecord ? (
+            <Card title="Detalle Clínico">
+              <Text style={styles.fieldLabel}>Fecha</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="dd/mm/yy"
+                value={vetForm.date}
+                onChangeText={(v) => setVetForm((p) => ({ ...p, date: v }))}
+              />
+
+              <Text style={styles.fieldLabel}>Doctor</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Nombre del doctor"
+                value={vetForm.doctor}
+                onChangeText={(v) => setVetForm((p) => ({ ...p, doctor: v }))}
+              />
+
+              <Text style={styles.fieldLabel}>Clínica Veterinaria</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Nombre de la veterinaria"
+                value={vetForm.clinic}
+                onChangeText={(v) => setVetForm((p) => ({ ...p, clinic: v }))}
+              />
+
+              <Text style={styles.fieldLabel}>2 fotos de referencia</Text>
+              <View style={styles.referencePhotosRow}>
+                <View style={styles.referencePhotoBox}><Text style={styles.referencePhotoText}>Foto referencia 1</Text></View>
+                <View style={styles.referencePhotoBox}><Text style={styles.referencePhotoText}>Foto referencia 2</Text></View>
+              </View>
+
+              <Text style={styles.fieldLabel}>Motivo</Text>
+              <TextInput
+                style={styles.input}
+                placeholder='Ej: "Control General"'
+                value={vetForm.reason}
+                onChangeText={(v) => setVetForm((p) => ({ ...p, reason: v }))}
+              />
+
+              <Text style={styles.fieldLabel}>Síntomas</Text>
+              <View style={styles.symptomInputRow}>
+                <TextInput
+                  style={[styles.input, styles.symptomInput]}
+                  placeholder="Ej: Vómitos"
+                  value={symptomInput}
+                  onChangeText={setSymptomInput}
+                />
+                <TouchableOpacity style={styles.smallInlineBtn} onPress={addSymptomToForm}>
+                  <Text style={styles.smallInlineBtnText}>Agregar</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.symptomChipsWrap}>
+                {vetForm.symptoms.map((symptom) => (
+                  <TouchableOpacity key={symptom} style={styles.symptomChip} onPress={() => removeSymptomFromForm(symptom)}>
+                    <Text style={styles.symptomChipText}>{symptom} ✕</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.fieldLabel}>Diagnóstico</Text>
+              <TextInput
+                style={styles.input}
+                placeholder='Ej: "Intoxicación"'
+                value={vetForm.diagnosis}
+                onChangeText={(v) => setVetForm((p) => ({ ...p, diagnosis: v }))}
+              />
+
+              <Text style={styles.fieldLabel}>Tratamiento</Text>
+              <TextInput
+                style={[styles.input, styles.multiline]}
+                placeholder="Indicaciones de tratamiento"
+                value={vetForm.treatment}
+                onChangeText={(v) => setVetForm((p) => ({ ...p, treatment: v }))}
+                multiline
+              />
+
+              <Text style={styles.fieldLabel}>Descripción</Text>
+              <TextInput
+                style={[styles.input, styles.multiline]}
+                placeholder="Descripción de la situación"
+                value={vetForm.description}
+                onChangeText={(v) => setVetForm((p) => ({ ...p, description: v }))}
+                multiline
+              />
+
+              <Text style={styles.fieldLabel}>Adjuntos</Text>
+              <View style={styles.attachmentBtnsRow}>
+                <TouchableOpacity style={styles.smallInlineBtn} onPress={addPhotoAttachmentToForm}>
+                  <Text style={styles.smallInlineBtnText}>Adjuntar foto</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.smallInlineBtn} onPress={addPdfAttachmentToForm}>
+                  <Text style={styles.smallInlineBtnText}>Adjuntar PDF</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={{ gap: 8 }}>{vetForm.attachments.map(renderAttachmentChip)}</View>
+
+              <TouchableOpacity style={[styles.actionBtn, styles.saveBtn]} onPress={saveVetRecord}>
+                <Text style={styles.saveBtnText}>Guardar</Text>
+              </TouchableOpacity>
+            </Card>
+          ) : null}
+
+          <View style={{ gap: 10 }}>
+            {vetHistory.map((record) => (
+              <View key={record.id} style={styles.historyItemCard}>
+                <Text style={styles.historyItemDate}>{record.date}</Text>
+                <Text style={styles.historyItemReason}>{record.reason}</Text>
+              </View>
+            ))}
+          </View>
+
           <TouchableOpacity style={[styles.actionBtn, styles.backBtn]} onPress={() => setScreen('PetDetail')}>
             <Text style={styles.backBtnText}>Volver al perfil</Text>
           </TouchableOpacity>
@@ -1092,7 +1332,7 @@ export default function App() {
               </View>
               <TextInput
                 style={[styles.input, styles.inlineValueInput]}
-                placeholder='Ej: "Café con manchas blancas"'
+                placeholder='Ej: "Café con machas blancas"'
                 value={petDraft.color}
                 onChangeText={(v) => setPetDraft((p) => ({ ...p, color: v }))}
               />
@@ -1204,7 +1444,7 @@ export default function App() {
             <Text style={styles.sectionBlockTitle}>Alergias</Text>
             <TextInput
               style={[styles.input, styles.multiline, styles.largeBlockInput]}
-              placeholder='Ej: "Chocolate, pasto, polvo"'
+              placeholder="Alergias"
               value={petDraft.allergies}
               onChangeText={(v) => setPetDraft((p) => ({ ...p, allergies: v }))}
               multiline
@@ -1213,7 +1453,7 @@ export default function App() {
             <Text style={styles.sectionBlockTitle}>Medicamentos</Text>
             <TextInput
               style={[styles.input, styles.multiline, styles.largeBlockInput]}
-              placeholder='Ej: "Ibuprofeno, Paracetamol"'
+              placeholder="Medicamentos"
               value={petDraft.medications}
               onChangeText={(v) => setPetDraft((p) => ({ ...p, medications: v }))}
               multiline
@@ -1222,7 +1462,7 @@ export default function App() {
             <Text style={styles.sectionBlockTitle}>Condiciones</Text>
             <TextInput
               style={[styles.input, styles.multiline, styles.largeBlockInput]}
-              placeholder='Ej: "Diabetes, Hipotiroidismo"'
+              placeholder="Condiciones"
               value={petDraft.conditions}
               onChangeText={(v) => setPetDraft((p) => ({ ...p, conditions: v }))}
               multiline
@@ -1231,7 +1471,7 @@ export default function App() {
             <Text style={styles.sectionBlockTitle}>Veterinario</Text>
             <TextInput
               style={[styles.input, styles.largeBlockInput]}
-              placeholder='Ej: "Dr. Juan Pérez"'
+              placeholder="Veterinario"
               value={petDraft.vet_name}
               onChangeText={(v) => setPetDraft((p) => ({ ...p, vet_name: v }))}
             />
@@ -1519,6 +1759,8 @@ const styles = StyleSheet.create({
   },
   cardHeader: { fontSize: 14, fontWeight: '800', color: '#0f172a', marginBottom: 10 },
 
+  fieldLabel: { color: '#334155', fontWeight: '700', marginBottom: 4 },
+
   labeledInlineRow: { flexDirection: 'row', gap: 10, alignItems: 'stretch' },
   leftTitleBox: {
     width: 130,
@@ -1543,6 +1785,60 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff'
   },
   calendarInlineBtnText: { color: '#0f172a', fontWeight: '700' },
+
+  referencePhotosRow: { flexDirection: 'row', gap: 10 },
+  referencePhotoBox: {
+    flex: 1,
+    minHeight: 84,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8fafc'
+  },
+  referencePhotoText: { color: '#64748b', fontWeight: '700' },
+
+  symptomInputRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  symptomInput: { flex: 1 },
+  symptomChipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  symptomChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: '#e2e8f0'
+  },
+  symptomChipText: { color: '#0f172a', fontWeight: '700' },
+
+  attachmentBtnsRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  smallInlineBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    backgroundColor: '#fff'
+  },
+  smallInlineBtnText: { color: '#0f172a', fontWeight: '800' },
+  attachmentChip: {
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    backgroundColor: '#f8fafc'
+  },
+  attachmentChipText: { color: '#334155', fontWeight: '700' },
+
+  historyItemCard: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 14,
+    padding: 12
+  },
+  historyItemDate: { color: '#64748b', fontWeight: '700' },
+  historyItemReason: { color: '#0f172a', fontWeight: '800', fontSize: 16, marginTop: 2 },
 
   navCard: {
     backgroundColor: '#fff',
