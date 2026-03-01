@@ -1013,7 +1013,7 @@ export default function App() {
                 disabled={loading}
               />
             </View>
-          </TouchableOpacity>
+          </Card>
 
           <TouchableOpacity style={styles.navCard} onPress={() => setScreen('PetVetHistory')}>
             <Text style={styles.navCardTitle}>Historial Veterinario</Text>
