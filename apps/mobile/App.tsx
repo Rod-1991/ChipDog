@@ -977,7 +977,7 @@ export default function App() {
                   <Text style={styles.avatarInitials}>{initialsFromName(selectedPet.name)}</Text>
                 </View>
               )}
-            </View>
+            </TouchableOpacity>
 
             <View style={{ flex: 1, gap: 6 }}>
               <Text style={styles.profileName}>{selectedPet.name}</Text>
@@ -1321,7 +1321,7 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {screen !== 'Home' ? <Text style={styles.title}>{title}</Text> : null}
+      {screen !== 'Home' && screen !== 'PetDetail' ? <Text style={styles.title}>{title}</Text> : null}
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         {renderScreen()}
       </ScrollView>
