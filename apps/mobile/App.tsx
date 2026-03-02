@@ -69,7 +69,8 @@ type VetAttachment = {
   id: string;
   kind: 'photo' | 'pdf';
   name: string;
-  uri: string;
+  path: string;
+  uri?: string;
   mimeType?: string | null;
 };
 
@@ -95,11 +96,19 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const vetAttachmentsBucket = 'pet-vet-attachments';
 
 const normalizeStringOrNull = (v: string) => {
   const t = (v ?? '').trim();
   return t.length ? t : null;
 };
+
+const sanitizeFilename = (name: string) =>
+  name
+    .normalize('NFKD')
+    .replace(/[^\w.\-]+/g, '_')
+    .replace(/_+/g, '_')
+    .toLowerCase();
 
 const initialsFromName = (name: string) => {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -778,17 +787,38 @@ export default function App() {
               id: String(item?.id ?? `${row.id}-att`),
               kind: item?.kind === 'pdf' ? 'pdf' : 'photo',
               name: String(item?.name ?? 'Adjunto'),
-              uri: String(item?.uri ?? ''),
+              path: String(item?.path ?? ''),
+              uri: undefined,
               mimeType: item?.mimeType ?? null
             }))
-            .filter((item: VetAttachment) => item.uri)
+            .filter((item: VetAttachment) => item.path)
         : [],
       referencePhotos: Array.isArray(row.reference_photos) ? row.reference_photos : []
     })) as VetRecord[];
 
-    setVetHistory(mapped);
-    setSelectedVetRecord((prev) => (prev ? mapped.find((item) => item.id === prev.id) ?? null : null));
-    setEditingVetRecordId((prev) => (prev && !mapped.some((item) => item.id === prev) ? null : prev));
+
+    const withSignedUrls = await Promise.all(
+      mapped.map(async (record) => {
+        const resolvedAttachments = await Promise.all(
+          record.attachments.map(async (attachment) => {
+            const { data: signedData, error: signedError } = await supabase.storage
+              .from(vetAttachmentsBucket)
+              .createSignedUrl(attachment.path, 60 * 60);
+
+            if (signedError) {
+              return { ...attachment, uri: undefined };
+            }
+            return { ...attachment, uri: signedData.signedUrl };
+          })
+        );
+
+        return { ...record, attachments: resolvedAttachments };
+      })
+    );
+
+    setVetHistory(withSignedUrls);
+    setSelectedVetRecord((prev) => (prev ? withSignedUrls.find((item) => item.id === prev.id) ?? null : null));
+    setEditingVetRecordId((prev) => (prev && !withSignedUrls.some((item) => item.id === prev) ? null : prev));
   };
 
   const addSymptomToForm = () => {
@@ -804,6 +834,50 @@ export default function App() {
 
   const removeSymptomFromForm = (symptom: string) => {
     setVetForm((prev) => ({ ...prev, symptoms: prev.symptoms.filter((item) => item !== symptom) }));
+  };
+
+  const uploadVetAttachment = async ({
+    sourceUri,
+    fileName,
+    mimeType,
+    kind
+  }: {
+    sourceUri: string;
+    fileName: string;
+    mimeType: string;
+    kind: 'photo' | 'pdf';
+  }) => {
+    if (!selectedPet) throw new Error('No hay mascota seleccionada');
+
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
+
+    if (!user) throw new Error('Usuario no autenticado');
+
+    const cleanName = sanitizeFilename(fileName || `${kind}-${Date.now()}`);
+    const path = `${user.id}/${selectedPet.id}/${Date.now()}-${cleanName}`;
+
+    const response = await fetch(sourceUri);
+    const bytes = await response.arrayBuffer();
+    const uint8 = new Uint8Array(bytes);
+
+    const { error: uploadError } = await supabase.storage.from(vetAttachmentsBucket).upload(path, uint8, {
+      upsert: false,
+      contentType: mimeType
+    });
+
+    if (uploadError) throw uploadError;
+
+    const { data: signedData, error: signedError } = await supabase.storage
+      .from(vetAttachmentsBucket)
+      .createSignedUrl(path, 60 * 60);
+
+    if (signedError) {
+      return { path, uri: undefined };
+    }
+
+    return { path, uri: signedData.signedUrl };
   };
 
   const addPhotoAttachmentToForm = async () => {
@@ -825,13 +899,24 @@ export default function App() {
     const fallback = `foto-${Date.now()}.jpg`;
     const name = asset.fileName?.trim() || fallback;
 
-    setVetForm((prev) => ({
-      ...prev,
-      attachments: [
-        ...prev.attachments,
-        { id: `${Date.now()}-photo`, kind: 'photo', name, uri: asset.uri, mimeType: asset.mimeType ?? 'image/jpeg' }
-      ]
-    }));
+    try {
+      const uploaded = await uploadVetAttachment({
+        sourceUri: asset.uri,
+        fileName: name,
+        mimeType: asset.mimeType ?? 'image/jpeg',
+        kind: 'photo'
+      });
+
+      setVetForm((prev) => ({
+        ...prev,
+        attachments: [
+          ...prev.attachments,
+          { id: `${Date.now()}-photo`, kind: 'photo', name, path: uploaded.path, uri: uploaded.uri, mimeType: asset.mimeType ?? 'image/jpeg' }
+        ]
+      }));
+    } catch (error: any) {
+      Alert.alert('Adjunto', error?.message ?? 'No se pudo subir la foto.');
+    }
   };
 
   const addPdfAttachmentToForm = async () => {
@@ -844,29 +929,46 @@ export default function App() {
     if (result.canceled) return;
 
     const file = result.assets[0];
-    setVetForm((prev) => ({
-      ...prev,
-      attachments: [
-        ...prev.attachments,
-        {
-          id: `${Date.now()}-pdf`,
-          kind: 'pdf',
-          name: file.name,
-          uri: file.uri,
-          mimeType: file.mimeType ?? 'application/pdf'
-        }
-      ]
-    }));
+    try {
+      const uploaded = await uploadVetAttachment({
+        sourceUri: file.uri,
+        fileName: file.name,
+        mimeType: file.mimeType ?? 'application/pdf',
+        kind: 'pdf'
+      });
+
+      setVetForm((prev) => ({
+        ...prev,
+        attachments: [
+          ...prev.attachments,
+          {
+            id: `${Date.now()}-pdf`,
+            kind: 'pdf',
+            name: file.name,
+            path: uploaded.path,
+            uri: uploaded.uri,
+            mimeType: file.mimeType ?? 'application/pdf'
+          }
+        ]
+      }));
+    } catch (error: any) {
+      Alert.alert('Adjunto', error?.message ?? 'No se pudo subir el PDF.');
+    }
   };
 
   const openAttachment = async (attachment: VetAttachment) => {
     try {
-      const can = await Linking.canOpenURL(attachment.uri);
-      if (!can) {
-        Alert.alert('Adjunto', 'No se puede abrir este archivo en el dispositivo.');
-        return;
+      let targetUrl = attachment.uri;
+      if (!targetUrl) {
+        const { data, error } = await supabase.storage.from(vetAttachmentsBucket).createSignedUrl(attachment.path, 60 * 60);
+        if (error) {
+          Alert.alert('Adjunto', error.message);
+          return;
+        }
+        targetUrl = data.signedUrl;
       }
-      await Linking.openURL(attachment.uri);
+
+      await Linking.openURL(targetUrl);
     } catch (error: any) {
       Alert.alert('Adjunto', error?.message ?? 'No fue posible abrir el archivo.');
     }
@@ -935,7 +1037,7 @@ export default function App() {
         diagnosis: vetForm.diagnosis.trim() || null,
         treatment: vetForm.treatment.trim() || null,
         description: vetForm.description.trim() || null,
-        attachments: vetForm.attachments,
+        attachments: vetForm.attachments.map((item) => ({ id: item.id, kind: item.kind, name: item.name, path: item.path, mimeType: item.mimeType ?? null })),
         reference_photos: ['Referencia clínica 1', 'Referencia clínica 2']
       };
 
