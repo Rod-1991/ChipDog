@@ -1,3 +1,6 @@
+-- Fix RLS policy creation for environments where pets owner column differs
+-- (`owner_profile_id` vs `owner_id`).
+
 alter table public.pet_vet_records enable row level security;
 
 drop policy if exists "pet_vet_records owner read" on public.pet_vet_records;
