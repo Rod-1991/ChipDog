@@ -5,6 +5,8 @@ import {
   Button,
   SafeAreaView,
   ScrollView,
+  KeyboardAvoidingView,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -18,6 +20,7 @@ import Constants from 'expo-constants';
 import { createClient } from '@supabase/supabase-js';
 import { addPetSchema, linkTagSchema, loginSchema } from '@chipdog/shared';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { Buffer } from 'buffer';
 
 type Screen =
@@ -66,6 +69,8 @@ type VetAttachment = {
   id: string;
   kind: 'photo' | 'pdf';
   name: string;
+  uri: string;
+  mimeType?: string | null;
 };
 
 type VetRecord = {
@@ -223,6 +228,7 @@ export default function App() {
   const [vetHistory, setVetHistory] = useState<VetRecord[]>([]);
   const [showNewVetRecord, setShowNewVetRecord] = useState(false);
   const [selectedVetRecord, setSelectedVetRecord] = useState<VetRecord | null>(null);
+  const [editingVetRecordId, setEditingVetRecordId] = useState<string | null>(null);
   const [symptomInput, setSymptomInput] = useState('');
   const [vetForm, setVetForm] = useState({
     date: '',
@@ -766,12 +772,23 @@ export default function App() {
       diagnosis: row.diagnosis ?? '',
       treatment: row.treatment ?? '',
       description: row.description ?? '',
-      attachments: Array.isArray(row.attachments) ? row.attachments : [],
+      attachments: Array.isArray(row.attachments)
+        ? row.attachments
+            .map((item: any) => ({
+              id: String(item?.id ?? `${row.id}-att`),
+              kind: item?.kind === 'pdf' ? 'pdf' : 'photo',
+              name: String(item?.name ?? 'Adjunto'),
+              uri: String(item?.uri ?? ''),
+              mimeType: item?.mimeType ?? null
+            }))
+            .filter((item: VetAttachment) => item.uri)
+        : [],
       referencePhotos: Array.isArray(row.reference_photos) ? row.reference_photos : []
     })) as VetRecord[];
 
     setVetHistory(mapped);
     setSelectedVetRecord((prev) => (prev ? mapped.find((item) => item.id === prev.id) ?? null : null));
+    setEditingVetRecordId((prev) => (prev && !mapped.some((item) => item.id === prev) ? null : prev));
   };
 
   const addSymptomToForm = () => {
@@ -810,16 +827,86 @@ export default function App() {
 
     setVetForm((prev) => ({
       ...prev,
-      attachments: [...prev.attachments, { id: `${Date.now()}-photo`, kind: 'photo', name }]
+      attachments: [
+        ...prev.attachments,
+        { id: `${Date.now()}-photo`, kind: 'photo', name, uri: asset.uri, mimeType: asset.mimeType ?? 'image/jpeg' }
+      ]
     }));
   };
 
-  const addPdfAttachmentToForm = () => {
-    const defaultName = `orden-medica-${Date.now()}.pdf`;
+  const addPdfAttachmentToForm = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ['application/pdf'],
+      copyToCacheDirectory: true,
+      multiple: false
+    });
+
+    if (result.canceled) return;
+
+    const file = result.assets[0];
     setVetForm((prev) => ({
       ...prev,
-      attachments: [...prev.attachments, { id: `${Date.now()}-pdf`, kind: 'pdf', name: defaultName }]
+      attachments: [
+        ...prev.attachments,
+        {
+          id: `${Date.now()}-pdf`,
+          kind: 'pdf',
+          name: file.name,
+          uri: file.uri,
+          mimeType: file.mimeType ?? 'application/pdf'
+        }
+      ]
     }));
+  };
+
+  const openAttachment = async (attachment: VetAttachment) => {
+    try {
+      const can = await Linking.canOpenURL(attachment.uri);
+      if (!can) {
+        Alert.alert('Adjunto', 'No se puede abrir este archivo en el dispositivo.');
+        return;
+      }
+      await Linking.openURL(attachment.uri);
+    } catch (error: any) {
+      Alert.alert('Adjunto', error?.message ?? 'No fue posible abrir el archivo.');
+    }
+  };
+
+  const startEditVetRecord = (record: VetRecord) => {
+    setSelectedVetRecord(record);
+    setEditingVetRecordId(record.id);
+    setShowNewVetRecord(true);
+    setVetForm({
+      date: record.date,
+      doctor: record.doctor,
+      clinic: record.clinic,
+      reason: record.reason,
+      symptoms: record.symptoms,
+      diagnosis: record.diagnosis,
+      treatment: record.treatment,
+      description: record.description,
+      attachments: record.attachments
+    });
+    setSymptomInput('');
+  };
+
+  const deleteVetRecord = async () => {
+    if (!editingVetRecordId) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('pet_vet_records').delete().eq('id', editingVetRecordId);
+      if (error) {
+        Alert.alert('Error eliminando registro', error.message);
+        return;
+      }
+      if (selectedPet) await loadVetHistory(selectedPet.id);
+      setShowNewVetRecord(false);
+      setEditingVetRecordId(null);
+      setSelectedVetRecord(null);
+      Alert.alert('Eliminado ✅', 'Registro eliminado correctamente.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const saveVetRecord = async () => {
@@ -852,7 +939,10 @@ export default function App() {
         reference_photos: ['Referencia clínica 1', 'Referencia clínica 2']
       };
 
-      const { error } = await supabase.from('pet_vet_records').insert(payload);
+      const query = editingVetRecordId
+        ? supabase.from('pet_vet_records').update(payload).eq('id', editingVetRecordId)
+        : supabase.from('pet_vet_records').insert(payload);
+      const { error } = await query;
       if (error) {
         Alert.alert('Error guardando historial', error.message);
         return;
@@ -872,16 +962,17 @@ export default function App() {
       });
       setSymptomInput('');
       setShowNewVetRecord(false);
-      Alert.alert('Guardado ✅', 'Registro clínico guardado en historial.');
+      setEditingVetRecordId(null);
+      Alert.alert('Guardado ✅', editingVetRecordId ? 'Registro actualizado.' : 'Registro clínico guardado en historial.');
     } finally {
       setLoading(false);
     }
   };
 
   const renderAttachmentChip = (item: VetAttachment) => (
-    <View key={item.id} style={styles.attachmentChip}>
+    <TouchableOpacity key={item.id} style={styles.attachmentChip} onPress={() => openAttachment(item)}>
       <Text style={styles.attachmentChipText}>{item.kind === 'photo' ? '📷' : '📄'} {item.name}</Text>
-    </View>
+    </TouchableOpacity>
   );
 
   useEffect(() => {
@@ -1230,7 +1321,7 @@ export default function App() {
     if (screen === 'PetVetHistory') {
       return (
         <View style={styles.form}>
-          <TouchableOpacity style={[styles.actionBtn, styles.linkBtn]} onPress={() => { setSelectedVetRecord(null); setShowNewVetRecord((v) => !v); }}>
+          <TouchableOpacity style={[styles.actionBtn, styles.linkBtn]} onPress={() => { setSelectedVetRecord(null); setEditingVetRecordId(null); setShowNewVetRecord((v) => !v); }}>
             <Text style={styles.linkBtnText}>{showNewVetRecord ? 'Cancelar nuevo registro' : 'Nuevo Registro'}</Text>
           </TouchableOpacity>
 
@@ -1332,8 +1423,13 @@ export default function App() {
               <View style={{ gap: 8 }}>{vetForm.attachments.map(renderAttachmentChip)}</View>
 
               <TouchableOpacity style={[styles.actionBtn, styles.saveBtn]} onPress={saveVetRecord}>
-                <Text style={styles.saveBtnText}>Guardar</Text>
+                <Text style={styles.saveBtnText}>{editingVetRecordId ? 'Guardar registro' : 'Guardar'}</Text>
               </TouchableOpacity>
+              {editingVetRecordId ? (
+                <TouchableOpacity style={[styles.actionBtn, styles.deleteBtn]} onPress={deleteVetRecord}>
+                  <Text style={styles.deleteBtnText}>Eliminar registro</Text>
+                </TouchableOpacity>
+              ) : null}
             </Card>
           ) : null}
 
@@ -1358,11 +1454,11 @@ export default function App() {
                 )}
               </View>
               <Text style={styles.fieldLabel}>Diagnóstico</Text>
-              <Text style={styles.historyDetailText}>{selectedVetRecord.diagnosis || '—'}</Text>
+              <View style={styles.historyDetailBox}><Text style={styles.historyDetailText}>{selectedVetRecord.diagnosis || '—'}</Text></View>
               <Text style={styles.fieldLabel}>Tratamiento</Text>
-              <Text style={styles.historyDetailText}>{selectedVetRecord.treatment || '—'}</Text>
+              <View style={styles.historyDetailBox}><Text style={styles.historyDetailText}>{selectedVetRecord.treatment || '—'}</Text></View>
               <Text style={styles.fieldLabel}>Descripción</Text>
-              <Text style={styles.historyDetailText}>{selectedVetRecord.description || '—'}</Text>
+              <View style={styles.historyDetailBox}><Text style={styles.historyDetailText}>{selectedVetRecord.description || '—'}</Text></View>
               <Text style={styles.fieldLabel}>Adjuntos</Text>
               <View style={{ gap: 8 }}>
                 {selectedVetRecord.attachments.length ? (
@@ -1371,6 +1467,9 @@ export default function App() {
                   <Text style={styles.historyEmptyText}>Sin adjuntos</Text>
                 )}
               </View>
+              <TouchableOpacity style={[styles.actionBtn, styles.linkBtn]} onPress={() => startEditVetRecord(selectedVetRecord)}>
+                <Text style={styles.linkBtnText}>Editar</Text>
+              </TouchableOpacity>
               <TouchableOpacity style={[styles.actionBtn, styles.backBtn]} onPress={() => setSelectedVetRecord(null)}>
                 <Text style={styles.backBtnText}>Volver al listado</Text>
               </TouchableOpacity>
@@ -1672,11 +1771,21 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {screen !== 'Home' && screen !== 'PetDetail' ? <Text style={styles.title}>{title}</Text> : null}
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        {renderScreen()}
-      </ScrollView>
-      {loading && <ActivityIndicator style={styles.loader} />}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 6 : 0}
+      >
+        {screen !== 'Home' && screen !== 'PetDetail' ? <Text style={styles.title}>{title}</Text> : null}
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+        >
+          {renderScreen()}
+        </ScrollView>
+        {loading && <ActivityIndicator style={styles.loader} />}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -1933,6 +2042,13 @@ const styles = StyleSheet.create({
   historyItemDate: { color: '#64748b', fontWeight: '700' },
   historyItemReason: { color: '#0f172a', fontWeight: '800', fontSize: 16, marginTop: 2 },
 
+  historyDetailBox: {
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+    padding: 10
+  },
   historyDetailText: { color: '#0f172a', fontWeight: '700' },
   historyEmptyText: { color: '#64748b', fontWeight: '600' },
 
@@ -1977,6 +2093,9 @@ const styles = StyleSheet.create({
 
   saveBtn: { backgroundColor: '#16a34a' },
   saveBtnText: { color: '#fff', fontWeight: '900', fontSize: 16 },
+
+  deleteBtn: { backgroundColor: '#dc2626' },
+  deleteBtnText: { color: '#fff', fontWeight: '900', fontSize: 16 },
 
   linkBtn: { backgroundColor: '#2563eb' },
   linkBtnText: { color: '#fff', fontWeight: '900', fontSize: 16 },
