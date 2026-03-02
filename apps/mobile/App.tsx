@@ -222,6 +222,7 @@ export default function App() {
 
   const [vetHistory, setVetHistory] = useState<VetRecord[]>([]);
   const [showNewVetRecord, setShowNewVetRecord] = useState(false);
+  const [selectedVetRecord, setSelectedVetRecord] = useState<VetRecord | null>(null);
   const [symptomInput, setSymptomInput] = useState('');
   const [vetForm, setVetForm] = useState({
     date: '',
@@ -743,6 +744,36 @@ export default function App() {
     Linking.openURL(url);
   };
 
+  const loadVetHistory = async (petId: number) => {
+    const { data, error } = await supabase
+      .from('pet_vet_records')
+      .select('id,visit_date,doctor_name,clinic_name,reason,symptoms,diagnosis,treatment,description,attachments,reference_photos,created_at')
+      .eq('pet_id', petId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      Alert.alert('Error cargando historial', error.message);
+      return;
+    }
+
+    const mapped = ((data as any[]) ?? []).map((row) => ({
+      id: String(row.id),
+      date: row.visit_date ?? '',
+      doctor: row.doctor_name ?? '',
+      clinic: row.clinic_name ?? '',
+      reason: row.reason ?? '',
+      symptoms: Array.isArray(row.symptoms) ? row.symptoms : [],
+      diagnosis: row.diagnosis ?? '',
+      treatment: row.treatment ?? '',
+      description: row.description ?? '',
+      attachments: Array.isArray(row.attachments) ? row.attachments : [],
+      referencePhotos: Array.isArray(row.reference_photos) ? row.reference_photos : []
+    })) as VetRecord[];
+
+    setVetHistory(mapped);
+    setSelectedVetRecord((prev) => (prev ? mapped.find((item) => item.id === prev.id) ?? null : null));
+  };
+
   const addSymptomToForm = () => {
     const value = symptomInput.trim();
     if (!value) return;
@@ -791,7 +822,12 @@ export default function App() {
     }));
   };
 
-  const saveVetRecord = () => {
+  const saveVetRecord = async () => {
+    if (!selectedPet) {
+      Alert.alert('Error', 'No hay mascota seleccionada.');
+      return;
+    }
+
     const date = vetForm.date.trim();
     const reason = vetForm.reason.trim();
 
@@ -800,35 +836,46 @@ export default function App() {
       return;
     }
 
-    const newRecord: VetRecord = {
-      id: `${Date.now()}`,
-      date,
-      doctor: vetForm.doctor.trim(),
-      clinic: vetForm.clinic.trim(),
-      reason,
-      symptoms: vetForm.symptoms,
-      diagnosis: vetForm.diagnosis.trim(),
-      treatment: vetForm.treatment.trim(),
-      description: vetForm.description.trim(),
-      attachments: vetForm.attachments,
-      referencePhotos: ['Referencia clínica 1', 'Referencia clínica 2']
-    };
+    setLoading(true);
+    try {
+      const payload = {
+        pet_id: selectedPet.id,
+        visit_date: date,
+        doctor_name: vetForm.doctor.trim() || null,
+        clinic_name: vetForm.clinic.trim() || null,
+        reason,
+        symptoms: vetForm.symptoms,
+        diagnosis: vetForm.diagnosis.trim() || null,
+        treatment: vetForm.treatment.trim() || null,
+        description: vetForm.description.trim() || null,
+        attachments: vetForm.attachments,
+        reference_photos: ['Referencia clínica 1', 'Referencia clínica 2']
+      };
 
-    setVetHistory((prev) => [newRecord, ...prev]);
-    setVetForm({
-      date: '',
-      doctor: '',
-      clinic: '',
-      reason: '',
-      symptoms: [],
-      diagnosis: '',
-      treatment: '',
-      description: '',
-      attachments: []
-    });
-    setSymptomInput('');
-    setShowNewVetRecord(false);
-    Alert.alert('Guardado ✅', 'Registro clínico guardado en historial.');
+      const { error } = await supabase.from('pet_vet_records').insert(payload);
+      if (error) {
+        Alert.alert('Error guardando historial', error.message);
+        return;
+      }
+
+      await loadVetHistory(selectedPet.id);
+      setVetForm({
+        date: '',
+        doctor: '',
+        clinic: '',
+        reason: '',
+        symptoms: [],
+        diagnosis: '',
+        treatment: '',
+        description: '',
+        attachments: []
+      });
+      setSymptomInput('');
+      setShowNewVetRecord(false);
+      Alert.alert('Guardado ✅', 'Registro clínico guardado en historial.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const renderAttachmentChip = (item: VetAttachment) => (
@@ -836,6 +883,11 @@ export default function App() {
       <Text style={styles.attachmentChipText}>{item.kind === 'photo' ? '📷' : '📄'} {item.name}</Text>
     </View>
   );
+
+  useEffect(() => {
+    if (screen !== 'PetVetHistory' || !selectedPet) return;
+    loadVetHistory(selectedPet.id);
+  }, [screen, selectedPet?.id]);
 
   const renderScreen = () => {
     if (screen === 'Login') {
@@ -1178,7 +1230,7 @@ export default function App() {
     if (screen === 'PetVetHistory') {
       return (
         <View style={styles.form}>
-          <TouchableOpacity style={[styles.actionBtn, styles.linkBtn]} onPress={() => setShowNewVetRecord((v) => !v)}>
+          <TouchableOpacity style={[styles.actionBtn, styles.linkBtn]} onPress={() => { setSelectedVetRecord(null); setShowNewVetRecord((v) => !v); }}>
             <Text style={styles.linkBtnText}>{showNewVetRecord ? 'Cancelar nuevo registro' : 'Nuevo Registro'}</Text>
           </TouchableOpacity>
 
@@ -1285,14 +1337,55 @@ export default function App() {
             </Card>
           ) : null}
 
-          <View style={{ gap: 10 }}>
-            {vetHistory.map((record) => (
-              <View key={record.id} style={styles.historyItemCard}>
-                <Text style={styles.historyItemDate}>{record.date}</Text>
-                <Text style={styles.historyItemReason}>{record.reason}</Text>
+          {selectedVetRecord ? (
+            <Card title="Detalle de visita">
+              <Text style={styles.historyItemReason}>{selectedVetRecord.reason}</Text>
+              <Text style={styles.historyItemDate}>
+                {selectedVetRecord.date}
+                {selectedVetRecord.clinic ? ` · ${selectedVetRecord.clinic}` : ''}
+                {selectedVetRecord.doctor ? ` · ${selectedVetRecord.doctor}` : ''}
+              </Text>
+              <Text style={styles.fieldLabel}>Síntomas</Text>
+              <View style={styles.symptomChipsWrap}>
+                {selectedVetRecord.symptoms.length ? (
+                  selectedVetRecord.symptoms.map((symptom) => (
+                    <View key={symptom} style={styles.symptomChip}>
+                      <Text style={styles.symptomChipText}>{symptom}</Text>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.historyEmptyText}>—</Text>
+                )}
               </View>
-            ))}
-          </View>
+              <Text style={styles.fieldLabel}>Diagnóstico</Text>
+              <Text style={styles.historyDetailText}>{selectedVetRecord.diagnosis || '—'}</Text>
+              <Text style={styles.fieldLabel}>Tratamiento</Text>
+              <Text style={styles.historyDetailText}>{selectedVetRecord.treatment || '—'}</Text>
+              <Text style={styles.fieldLabel}>Descripción</Text>
+              <Text style={styles.historyDetailText}>{selectedVetRecord.description || '—'}</Text>
+              <Text style={styles.fieldLabel}>Adjuntos</Text>
+              <View style={{ gap: 8 }}>
+                {selectedVetRecord.attachments.length ? (
+                  selectedVetRecord.attachments.map(renderAttachmentChip)
+                ) : (
+                  <Text style={styles.historyEmptyText}>Sin adjuntos</Text>
+                )}
+              </View>
+              <TouchableOpacity style={[styles.actionBtn, styles.backBtn]} onPress={() => setSelectedVetRecord(null)}>
+                <Text style={styles.backBtnText}>Volver al listado</Text>
+              </TouchableOpacity>
+            </Card>
+          ) : (
+            <View style={{ gap: 10 }}>
+              {vetHistory.map((record) => (
+                <TouchableOpacity key={record.id} style={styles.historyItemCard} onPress={() => setSelectedVetRecord(record)}>
+                  <Text style={styles.historyItemDate}>{record.date}</Text>
+                  <Text style={styles.historyItemReason}>{record.reason}</Text>
+                </TouchableOpacity>
+              ))}
+              {!vetHistory.length ? <Text style={styles.historyEmptyText}>Aún no hay registros guardados.</Text> : null}
+            </View>
+          )}
 
           <TouchableOpacity style={[styles.actionBtn, styles.backBtn]} onPress={() => setScreen('PetDetail')}>
             <Text style={styles.backBtnText}>Volver al perfil</Text>
@@ -1839,6 +1932,9 @@ const styles = StyleSheet.create({
   },
   historyItemDate: { color: '#64748b', fontWeight: '700' },
   historyItemReason: { color: '#0f172a', fontWeight: '800', fontSize: 16, marginTop: 2 },
+
+  historyDetailText: { color: '#0f172a', fontWeight: '700' },
+  historyEmptyText: { color: '#64748b', fontWeight: '600' },
 
   navCard: {
     backgroundColor: '#fff',
