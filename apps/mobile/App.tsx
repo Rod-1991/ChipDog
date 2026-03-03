@@ -974,8 +974,15 @@ export default function App() {
     }
   };
 
+  const removeAttachmentFromForm = (attachmentId: string) => {
+    setVetForm((prev) => ({
+      ...prev,
+      attachments: prev.attachments.filter((item) => item.id !== attachmentId)
+    }));
+  };
+
   const startEditVetRecord = (record: VetRecord) => {
-    setSelectedVetRecord(record);
+    setSelectedVetRecord(null);
     setEditingVetRecordId(record.id);
     setShowNewVetRecord(true);
     setVetForm({
@@ -1075,6 +1082,17 @@ export default function App() {
     <TouchableOpacity key={item.id} style={styles.attachmentChip} onPress={() => openAttachment(item)}>
       <Text style={styles.attachmentChipText}>{item.kind === 'photo' ? '📷' : '📄'} {item.name}</Text>
     </TouchableOpacity>
+  );
+
+  const renderEditableAttachmentChip = (item: VetAttachment) => (
+    <View key={item.id} style={styles.attachmentEditChip}>
+      <TouchableOpacity style={{ flex: 1 }} onPress={() => openAttachment(item)}>
+        <Text style={styles.attachmentChipText}>{item.kind === 'photo' ? '📷' : '📄'} {item.name}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.removeAttachmentBtn} onPress={() => removeAttachmentFromForm(item.id)}>
+        <Text style={styles.removeAttachmentBtnText}>Eliminar</Text>
+      </TouchableOpacity>
+    </View>
   );
 
   useEffect(() => {
@@ -1423,9 +1441,24 @@ export default function App() {
     if (screen === 'PetVetHistory') {
       return (
         <View style={styles.form}>
-          <TouchableOpacity style={[styles.actionBtn, styles.linkBtn]} onPress={() => { setSelectedVetRecord(null); setEditingVetRecordId(null); setShowNewVetRecord((v) => !v); }}>
-            <Text style={styles.linkBtnText}>{showNewVetRecord ? 'Cancelar nuevo registro' : 'Nuevo Registro'}</Text>
-          </TouchableOpacity>
+          {!selectedVetRecord ? (
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.linkBtn]}
+              onPress={() => {
+                setSelectedVetRecord(null);
+                if (showNewVetRecord) {
+                  setShowNewVetRecord(false);
+                  setEditingVetRecordId(null);
+                } else {
+                  setShowNewVetRecord(true);
+                }
+              }}
+            >
+              <Text style={styles.linkBtnText}>
+                {showNewVetRecord ? (editingVetRecordId ? 'Cancelar edición' : 'Cancelar nuevo registro') : 'Nuevo Registro'}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
 
           {showNewVetRecord ? (
             <Card title="Detalle Clínico">
@@ -1522,7 +1555,7 @@ export default function App() {
                   <Text style={styles.smallInlineBtnText}>Adjuntar PDF</Text>
                 </TouchableOpacity>
               </View>
-              <View style={{ gap: 8 }}>{vetForm.attachments.map(renderAttachmentChip)}</View>
+              <View style={{ gap: 8 }}>{vetForm.attachments.map(renderEditableAttachmentChip)}</View>
 
               <TouchableOpacity style={[styles.actionBtn, styles.saveBtn]} onPress={saveVetRecord}>
                 <Text style={styles.saveBtnText}>{editingVetRecordId ? 'Guardar registro' : 'Guardar'}</Text>
@@ -1535,7 +1568,7 @@ export default function App() {
             </Card>
           ) : null}
 
-          {selectedVetRecord ? (
+          {!showNewVetRecord && selectedVetRecord ? (
             <Card title="Detalle de visita">
               <Text style={styles.historyItemReason}>{selectedVetRecord.reason}</Text>
               <Text style={styles.historyItemDate}>
@@ -1576,7 +1609,7 @@ export default function App() {
                 <Text style={styles.backBtnText}>Volver al listado</Text>
               </TouchableOpacity>
             </Card>
-          ) : (
+          ) : !showNewVetRecord ? (
             <View style={{ gap: 10 }}>
               {vetHistory.map((record) => (
                 <TouchableOpacity key={record.id} style={styles.historyItemCard} onPress={() => setSelectedVetRecord(record)}>
@@ -1586,7 +1619,7 @@ export default function App() {
               ))}
               {!vetHistory.length ? <Text style={styles.historyEmptyText}>Aún no hay registros guardados.</Text> : null}
             </View>
-          )}
+          ) : null}
 
           <TouchableOpacity style={[styles.actionBtn, styles.backBtn]} onPress={() => setScreen('PetDetail')}>
             <Text style={styles.backBtnText}>Volver al perfil</Text>
@@ -2133,6 +2166,24 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc'
   },
   attachmentChipText: { color: '#334155', fontWeight: '700' },
+  attachmentEditChip: {
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    backgroundColor: '#f8fafc',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
+  removeAttachmentBtn: {
+    backgroundColor: '#fee2e2',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6
+  },
+  removeAttachmentBtnText: { color: '#b91c1c', fontWeight: '800' },
 
   historyItemCard: {
     backgroundColor: '#fff',
