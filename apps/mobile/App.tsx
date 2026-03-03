@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -6,6 +6,8 @@ import {
   SafeAreaView,
   ScrollView,
   KeyboardAvoidingView,
+  Modal,
+  PanResponder,
   Platform,
   StyleSheet,
   Text,
@@ -34,7 +36,8 @@ type Screen =
   | 'PetVaccines'
   | 'LinkTag'
   | 'FoundTag'
-  | 'FoundResult';
+  | 'FoundResult'
+  | 'LostSetup';
 
 type Pet = {
   id: number;
@@ -86,6 +89,23 @@ type VetRecord = {
   description: string;
   attachments: VetAttachment[];
   referencePhotos: string[];
+};
+
+type LostSetupDraft = {
+  zoomLevel: number;
+  radiusMeters: number;
+  approximateLostDate: string;
+  approximateLostTime: string;
+};
+
+type LostMapCenter = {
+  latitude: number;
+  longitude: number;
+};
+
+const FALLBACK_MAP_CENTER: LostMapCenter = {
+  latitude: -33.4489,
+  longitude: -70.6693
 };
 
 const supabaseUrl = Constants.expoConfig?.extra?.supabaseUrl;
@@ -250,6 +270,18 @@ export default function App() {
     description: '',
     attachments: [] as VetAttachment[]
   });
+  const [lostSetupDraft, setLostSetupDraft] = useState<LostSetupDraft>({
+    zoomLevel: 0,
+    radiusMeters: 300,
+    approximateLostDate: '',
+    approximateLostTime: ''
+  });
+  const [showLostTimeModal, setShowLostTimeModal] = useState(false);
+  const [lostMapCenter, setLostMapCenter] = useState<LostMapCenter | null>(null);
+  const [loadingLostLocation, setLoadingLostLocation] = useState(false);
+  const [lostLocationError, setLostLocationError] = useState<string | null>(null);
+  const gestureStartCenterRef = useRef<LostMapCenter | null>(null);
+  const gestureStartZoomRef = useRef(0);
 
   const title = useMemo(() => {
     switch (screen) {
@@ -275,6 +307,8 @@ export default function App() {
         return 'Encontré una mascota';
       case 'FoundResult':
         return 'Mascota encontrada';
+      case 'LostSetup':
+        return 'Estado si me pierdo';
     }
   }, [screen, selectedPet]);
 
@@ -407,6 +441,147 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const buildRadiusFromZoomLevel = (zoomLevel: number) => {
+    const minimum = 100;
+    const maximum = 2500;
+    const step = 80;
+    const computed = Math.round(maximum - zoomLevel * step);
+    return Math.min(maximum, Math.max(minimum, computed));
+  };
+
+
+  const buildMapImageUrl = (center: LostMapCenter, zoomLevel: number) => {
+    const safeZoom = Math.max(5, Math.min(18, Math.round(zoomLevel / 2) + 10));
+    const marker = `${center.latitude.toFixed(6)},${center.longitude.toFixed(6)},red-pushpin`;
+    return `https://staticmap.openstreetmap.de/staticmap.php?center=${center.latitude.toFixed(6)},${center.longitude.toFixed(6)}&zoom=${safeZoom}&size=640x360&markers=${marker}`;
+  };
+
+  const requestLostLocation = async () => {
+    setLoadingLostLocation(true);
+    setLostLocationError(null);
+
+    try {
+      await new Promise<void>((resolve) => {
+        const geo = (globalThis as any)?.navigator?.geolocation;
+
+        if (!geo || typeof geo.getCurrentPosition !== 'function') {
+          setLostMapCenter((prev) => prev ?? FALLBACK_MAP_CENTER);
+          setLostLocationError('No pudimos leer la ubicación del dispositivo. Usamos un punto inicial para que puedas mover el mapa con los dedos.');
+          resolve();
+          return;
+        }
+
+        geo.getCurrentPosition(
+          (position: any) => {
+            setLostMapCenter({
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude
+            });
+            resolve();
+          },
+          () => {
+            setLostMapCenter((prev) => prev ?? FALLBACK_MAP_CENTER);
+            setLostLocationError('No se pudo obtener la ubicación actual. Podés ajustar el área moviendo y haciendo zoom con los dedos.');
+            resolve();
+          },
+          { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 }
+        );
+      });
+    } finally {
+      setLoadingLostLocation(false);
+    }
+  };
+
+  const panMapResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: (_, gesture) => {
+          gestureStartCenterRef.current = lostMapCenter ?? FALLBACK_MAP_CENTER;
+          gestureStartZoomRef.current = lostSetupDraft.zoomLevel;
+
+          if (gesture.numberActiveTouches >= 2) {
+            const initialDistance = Math.hypot(gesture.dx, gesture.dy);
+            if (initialDistance > 0) {
+              gestureStartZoomRef.current = lostSetupDraft.zoomLevel;
+            }
+          }
+        },
+        onPanResponderMove: (_, gesture) => {
+          const baseCenter = gestureStartCenterRef.current ?? lostMapCenter ?? FALLBACK_MAP_CENTER;
+
+          if (gesture.numberActiveTouches >= 2) {
+            const deltaZoom = Math.round((-gesture.dy + gesture.dx) / 25);
+            const nextZoom = Math.min(30, Math.max(0, gestureStartZoomRef.current + deltaZoom));
+            setLostSetupDraft((prev) => ({
+              ...prev,
+              zoomLevel: nextZoom,
+              radiusMeters: buildRadiusFromZoomLevel(nextZoom)
+            }));
+            return;
+          }
+
+          const sensitivity = 0.00006 * (32 - Math.min(lostSetupDraft.zoomLevel, 30));
+          const nextCenter = {
+            latitude: baseCenter.latitude - gesture.dy * sensitivity,
+            longitude: baseCenter.longitude - gesture.dx * sensitivity
+          };
+          setLostMapCenter(nextCenter);
+        }
+      }),
+    [lostMapCenter, lostSetupDraft.zoomLevel]
+  );
+
+  useEffect(() => {
+    if (screen !== 'LostSetup' || lostMapCenter) return;
+    requestLostLocation();
+  }, [screen, lostMapCenter]);
+
+  const handleLostStatusChange = async (isLost: boolean) => {
+    if (!selectedPet) return;
+
+    if (!isLost) {
+      await updatePetLostStatus(selectedPet.id, false);
+      return;
+    }
+
+    setLostSetupDraft({
+      zoomLevel: 0,
+      radiusMeters: buildRadiusFromZoomLevel(0),
+      approximateLostDate: '',
+      approximateLostTime: ''
+    });
+    setShowLostTimeModal(false);
+    setLostMapCenter(FALLBACK_MAP_CENTER);
+    setLostLocationError(null);
+    setScreen('LostSetup');
+  };
+
+  const handleConfirmLostRadius = () => {
+    setShowLostTimeModal(true);
+  };
+
+  const handleConfirmLostActivation = async () => {
+    if (!selectedPet) return;
+
+    const trimmedDate = lostSetupDraft.approximateLostDate.trim();
+    const trimmedTime = lostSetupDraft.approximateLostTime.trim();
+    if (!trimmedDate || !trimmedTime) {
+      Alert.alert('Fecha y hora requeridas', 'Ingresa fecha y hora aproximadas para continuar.');
+      return;
+    }
+
+    setShowLostTimeModal(false);
+    await updatePetLostStatus(selectedPet.id, true);
+
+    Alert.alert(
+      'Mascota marcada como perdida',
+      `Se confirmó el estado de pérdida con un radio estimado de ${lostSetupDraft.radiusMeters} metros, fecha aproximada ${trimmedDate} y hora aproximada ${trimmedTime}. La visibilidad en mapa para otros usuarios se activará en la siguiente etapa.`
+    );
+    setScreen('PetDetail');
   };
 
   const savePetProfile = async () => {
@@ -1351,6 +1526,95 @@ export default function App() {
       );
     }
 
+    if (screen === 'LostSetup') {
+      const mapZoomValue = Math.min(30, Math.max(0, lostSetupDraft.zoomLevel));
+
+      return (
+        <View style={styles.form}>
+          <Card title="Definir zona de búsqueda">
+            <Text style={styles.helperText}>
+              Mové el mapa acercando o alejando para ajustar el radio donde creés que puede estar.
+            </Text>
+
+            <View style={styles.mapMock}>
+              <Text style={styles.mapMockTitle}>Mapa de ubicación actual</Text>
+              <Text style={styles.mapMockSub}>Mové el mapa con un dedo y hacé zoom con dos dedos.</Text>
+              {loadingLostLocation ? <Text style={styles.mapMockSub}>Cargando ubicación...</Text> : null}
+              {lostLocationError ? <Text style={styles.mapErrorText}>{lostLocationError}</Text> : null}
+              <View style={styles.mapGestureWrap} {...panMapResponder.panHandlers}>
+                <Image
+                  source={{ uri: buildMapImageUrl(lostMapCenter ?? FALLBACK_MAP_CENTER, mapZoomValue) }}
+                  style={styles.mapImage}
+                  resizeMode="cover"
+                />
+              </View>
+            </View>
+
+            <Text style={styles.radiusSummary}>Radio estimado: {lostSetupDraft.radiusMeters} metros</Text>
+          </Card>
+
+          <TouchableOpacity style={[styles.actionBtn, styles.linkBtn]} onPress={handleConfirmLostRadius}>
+            <Text style={styles.linkBtnText}>Confirmar radio</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.backBtn]}
+            onPress={() => {
+              setShowLostTimeModal(false);
+              setScreen('PetDetail');
+            }}
+          >
+            <Text style={styles.backBtnText}>Cancelar</Text>
+          </TouchableOpacity>
+
+          <Modal visible={showLostTimeModal} transparent animationType="fade" onRequestClose={() => setShowLostTimeModal(false)}>
+            <View style={styles.modalBackdrop}>
+              <View style={styles.modalCard}>
+                <Text style={styles.modalTitle}>Fecha y hora aproximadas de pérdida</Text>
+                <Text style={styles.modalBody}>Ingresá fecha y hora aproximadas en que se perdió tu mascota.</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Ej: 03/03/2026"
+                  value={lostSetupDraft.approximateLostDate}
+                  onChangeText={(value) =>
+                    setLostSetupDraft((prev) => ({
+                      ...prev,
+                      approximateLostDate: value
+                    }))
+                  }
+                />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Ej: 18:45"
+                  value={lostSetupDraft.approximateLostTime}
+                  onChangeText={(value) =>
+                    setLostSetupDraft((prev) => ({
+                      ...prev,
+                      approximateLostTime: value
+                    }))
+                  }
+                />
+
+                <View style={styles.modalActions}>
+                  <TouchableOpacity style={[styles.actionBtn, styles.backBtn, styles.modalActionButton]} onPress={() => setShowLostTimeModal(false)}>
+                    <Text style={styles.backBtnText}>Volver</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, styles.linkBtn, styles.modalActionButton]}
+                    onPress={handleConfirmLostActivation}
+                    disabled={loading}
+                  >
+                    <Text style={styles.linkBtnText}>{loading ? 'Guardando...' : 'Confirmar pérdida'}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        </View>
+      );
+    }
+
+
     if (screen === 'PetDetail') {
       if (!selectedPet) {
         return (
@@ -1401,7 +1665,7 @@ export default function App() {
               <Text style={styles.switchLabel}>Activar si se pierde</Text>
               <Switch
                 value={selectedPet.is_lost}
-                onValueChange={(v) => updatePetLostStatus(selectedPet.id, v)}
+                onValueChange={handleLostStatusChange}
                 disabled={loading}
               />
             </View>
@@ -2222,6 +2486,74 @@ const styles = StyleSheet.create({
 
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   switchLabel: { color: '#334155', fontWeight: '700' },
+
+
+  helperText: { color: '#475569', fontWeight: '600' },
+  mapMock: {
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 14,
+    padding: 14,
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    gap: 6
+  },
+  mapMockTitle: { color: '#0f172a', fontSize: 16, fontWeight: '800' },
+  mapMockSub: { color: '#64748b', fontWeight: '600' },
+  mapErrorText: { color: '#b91c1c', fontWeight: '700', textAlign: 'center' },
+  mapImage: {
+    marginTop: 8,
+    width: '100%',
+    maxWidth: 330,
+    aspectRatio: 16 / 9,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#bfdbfe'
+  },
+  mapCircle: {
+    marginTop: 4,
+    width: 120,
+    height: 120,
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: '#2563eb',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#dbeafe'
+  },
+  mapCircleText: { color: '#1d4ed8', fontWeight: '800' },
+  mapGestureWrap: { width: '100%', maxWidth: 330, marginTop: 8, borderRadius: 12, overflow: 'hidden' },
+  zoomButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    backgroundColor: '#fff'
+  },
+  zoomButtonText: { color: '#0f172a', fontWeight: '800' },
+  radiusSummary: { color: '#0f172a', fontWeight: '700', marginTop: 4 },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.45)',
+    justifyContent: 'center',
+    padding: 18
+  },
+  modalCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 16,
+    gap: 10
+  },
+  modalTitle: { color: '#0f172a', fontSize: 18, fontWeight: '800' },
+  modalBody: { color: '#475569', fontWeight: '600' },
+  modalActions: { flexDirection: 'row', gap: 10 },
+  modalActionButton: { flex: 1 },
 
 
   badge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1 },
