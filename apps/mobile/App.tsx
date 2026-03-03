@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -7,6 +7,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Modal,
+  PanResponder,
   Platform,
   StyleSheet,
   Text,
@@ -100,6 +101,11 @@ type LostSetupDraft = {
 type LostMapCenter = {
   latitude: number;
   longitude: number;
+};
+
+const FALLBACK_MAP_CENTER: LostMapCenter = {
+  latitude: -33.4489,
+  longitude: -70.6693
 };
 
 const supabaseUrl = Constants.expoConfig?.extra?.supabaseUrl;
@@ -274,6 +280,8 @@ export default function App() {
   const [lostMapCenter, setLostMapCenter] = useState<LostMapCenter | null>(null);
   const [loadingLostLocation, setLoadingLostLocation] = useState(false);
   const [lostLocationError, setLostLocationError] = useState<string | null>(null);
+  const gestureStartCenterRef = useRef<LostMapCenter | null>(null);
+  const gestureStartZoomRef = useRef(0);
 
   const title = useMemo(() => {
     switch (screen) {
@@ -455,11 +463,13 @@ export default function App() {
     setLostLocationError(null);
 
     try {
-      await new Promise<void>((resolve, reject) => {
+      await new Promise<void>((resolve) => {
         const geo = (globalThis as any)?.navigator?.geolocation;
 
         if (!geo || typeof geo.getCurrentPosition !== 'function') {
-          reject(new Error('Geolocalización no disponible en este dispositivo.'));
+          setLostMapCenter((prev) => prev ?? FALLBACK_MAP_CENTER);
+          setLostLocationError('No pudimos leer la ubicación del dispositivo. Usamos un punto inicial para que puedas mover el mapa con los dedos.');
+          resolve();
           return;
         }
 
@@ -471,18 +481,59 @@ export default function App() {
             });
             resolve();
           },
-          (error: any) => {
-            reject(new Error(error?.message || 'No se pudo obtener la ubicación actual.'));
+          () => {
+            setLostMapCenter((prev) => prev ?? FALLBACK_MAP_CENTER);
+            setLostLocationError('No se pudo obtener la ubicación actual. Podés ajustar el área moviendo y haciendo zoom con los dedos.');
+            resolve();
           },
           { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 }
         );
       });
-    } catch (error: any) {
-      setLostLocationError(error?.message ?? 'No se pudo obtener la ubicación actual.');
     } finally {
       setLoadingLostLocation(false);
     }
   };
+
+  const panMapResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: (_, gesture) => {
+          gestureStartCenterRef.current = lostMapCenter ?? FALLBACK_MAP_CENTER;
+          gestureStartZoomRef.current = lostSetupDraft.zoomLevel;
+
+          if (gesture.numberActiveTouches >= 2) {
+            const initialDistance = Math.hypot(gesture.dx, gesture.dy);
+            if (initialDistance > 0) {
+              gestureStartZoomRef.current = lostSetupDraft.zoomLevel;
+            }
+          }
+        },
+        onPanResponderMove: (_, gesture) => {
+          const baseCenter = gestureStartCenterRef.current ?? lostMapCenter ?? FALLBACK_MAP_CENTER;
+
+          if (gesture.numberActiveTouches >= 2) {
+            const deltaZoom = Math.round((-gesture.dy + gesture.dx) / 25);
+            const nextZoom = Math.min(30, Math.max(0, gestureStartZoomRef.current + deltaZoom));
+            setLostSetupDraft((prev) => ({
+              ...prev,
+              zoomLevel: nextZoom,
+              radiusMeters: buildRadiusFromZoomLevel(nextZoom)
+            }));
+            return;
+          }
+
+          const sensitivity = 0.00006 * (32 - Math.min(lostSetupDraft.zoomLevel, 30));
+          const nextCenter = {
+            latitude: baseCenter.latitude - gesture.dy * sensitivity,
+            longitude: baseCenter.longitude - gesture.dx * sensitivity
+          };
+          setLostMapCenter(nextCenter);
+        }
+      }),
+    [lostMapCenter, lostSetupDraft.zoomLevel]
+  );
 
   useEffect(() => {
     if (screen !== 'LostSetup' || lostMapCenter) return;
@@ -504,16 +555,12 @@ export default function App() {
       approximateLostTime: ''
     });
     setShowLostTimeModal(false);
-    setLostMapCenter(null);
+    setLostMapCenter(FALLBACK_MAP_CENTER);
     setLostLocationError(null);
     setScreen('LostSetup');
   };
 
   const handleConfirmLostRadius = () => {
-    if (!lostMapCenter) {
-      Alert.alert('Ubicación requerida', 'Primero se debe cargar la ubicación del dispositivo en el mapa.');
-      return;
-    }
     setShowLostTimeModal(true);
   };
 
@@ -1491,112 +1538,16 @@ export default function App() {
 
             <View style={styles.mapMock}>
               <Text style={styles.mapMockTitle}>Mapa de ubicación actual</Text>
-              <Text style={styles.mapMockSub}>Centro aproximado del dispositivo y zoom: {mapZoomValue}</Text>
+              <Text style={styles.mapMockSub}>Mové el mapa con un dedo y hacé zoom con dos dedos.</Text>
               {loadingLostLocation ? <Text style={styles.mapMockSub}>Cargando ubicación...</Text> : null}
               {lostLocationError ? <Text style={styles.mapErrorText}>{lostLocationError}</Text> : null}
-              {lostMapCenter ? (
+              <View style={styles.mapGestureWrap} {...panMapResponder.panHandlers}>
                 <Image
-                  source={{ uri: buildMapImageUrl(lostMapCenter, mapZoomValue) }}
+                  source={{ uri: buildMapImageUrl(lostMapCenter ?? FALLBACK_MAP_CENTER, mapZoomValue) }}
                   style={styles.mapImage}
                   resizeMode="cover"
                 />
-              ) : null}
-            </View>
-
-            <View style={styles.moveControls}>
-              <TouchableOpacity
-                style={styles.zoomButton}
-                onPress={() =>
-                  setLostMapCenter((prev) => {
-                    if (!prev) return prev;
-                    const step = 0.0018 * (1 - Math.min(mapZoomValue, 25) / 40);
-                    return { ...prev, latitude: prev.latitude + step };
-                  })
-                }
-                disabled={!lostMapCenter}
-              >
-                <Text style={styles.zoomButtonText}>Mover ↑</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.zoomButton}
-                onPress={() =>
-                  setLostMapCenter((prev) => {
-                    if (!prev) return prev;
-                    const step = 0.0018 * (1 - Math.min(mapZoomValue, 25) / 40);
-                    return { ...prev, latitude: prev.latitude - step };
-                  })
-                }
-                disabled={!lostMapCenter}
-              >
-                <Text style={styles.zoomButtonText}>Mover ↓</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.moveControls}>
-              <TouchableOpacity
-                style={styles.zoomButton}
-                onPress={() =>
-                  setLostMapCenter((prev) => {
-                    if (!prev) return prev;
-                    const step = 0.0022 * (1 - Math.min(mapZoomValue, 25) / 40);
-                    return { ...prev, longitude: prev.longitude - step };
-                  })
-                }
-                disabled={!lostMapCenter}
-              >
-                <Text style={styles.zoomButtonText}>Mover ←</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.zoomButton}
-                onPress={() =>
-                  setLostMapCenter((prev) => {
-                    if (!prev) return prev;
-                    const step = 0.0022 * (1 - Math.min(mapZoomValue, 25) / 40);
-                    return { ...prev, longitude: prev.longitude + step };
-                  })
-                }
-                disabled={!lostMapCenter}
-              >
-                <Text style={styles.zoomButtonText}>Mover →</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity style={styles.retryLocationBtn} onPress={requestLostLocation} disabled={loadingLostLocation}>
-              <Text style={styles.retryLocationBtnText}>{loadingLostLocation ? 'Actualizando ubicación...' : 'Usar ubicación actual'}</Text>
-            </TouchableOpacity>
-
-            <Text style={styles.fieldLabel}>Ajustar acercamiento / alejamiento</Text>
-            <View style={styles.zoomControls}>
-              <TouchableOpacity
-                style={styles.zoomButton}
-                onPress={() =>
-                  setLostSetupDraft((prev) => {
-                    const nextZoom = Math.max(0, prev.zoomLevel - 1);
-                    return {
-                      ...prev,
-                      zoomLevel: nextZoom,
-                      radiusMeters: buildRadiusFromZoomLevel(nextZoom)
-                    };
-                  })
-                }
-              >
-                <Text style={styles.zoomButtonText}>Alejar</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.zoomButton}
-                onPress={() =>
-                  setLostSetupDraft((prev) => {
-                    const nextZoom = Math.min(30, prev.zoomLevel + 1);
-                    return {
-                      ...prev,
-                      zoomLevel: nextZoom,
-                      radiusMeters: buildRadiusFromZoomLevel(nextZoom)
-                    };
-                  })
-                }
-              >
-                <Text style={styles.zoomButtonText}>Acercar</Text>
-              </TouchableOpacity>
+              </View>
             </View>
 
             <Text style={styles.radiusSummary}>Radio estimado: {lostSetupDraft.radiusMeters} metros</Text>
@@ -2572,19 +2523,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#dbeafe'
   },
   mapCircleText: { color: '#1d4ed8', fontWeight: '800' },
-  zoomControls: { flexDirection: 'row', gap: 10, marginTop: 6 },
-  moveControls: { flexDirection: 'row', gap: 10 },
-  retryLocationBtn: {
-    borderWidth: 1,
-    borderColor: '#93c5fd',
-    backgroundColor: '#eff6ff',
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    marginTop: 2
-  },
-  retryLocationBtnText: { color: '#1d4ed8', fontWeight: '800' },
+  mapGestureWrap: { width: '100%', maxWidth: 330, marginTop: 8, borderRadius: 12, overflow: 'hidden' },
   zoomButton: {
     flex: 1,
     borderWidth: 1,
