@@ -6,6 +6,7 @@ import {
   SafeAreaView,
   ScrollView,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   StyleSheet,
   Text,
@@ -34,7 +35,8 @@ type Screen =
   | 'PetVaccines'
   | 'LinkTag'
   | 'FoundTag'
-  | 'FoundResult';
+  | 'FoundResult'
+  | 'LostSetup';
 
 type Pet = {
   id: number;
@@ -86,6 +88,12 @@ type VetRecord = {
   description: string;
   attachments: VetAttachment[];
   referencePhotos: string[];
+};
+
+type LostSetupDraft = {
+  zoomLevel: number;
+  radiusMeters: number;
+  approximateLostTime: string;
 };
 
 const supabaseUrl = Constants.expoConfig?.extra?.supabaseUrl;
@@ -250,6 +258,12 @@ export default function App() {
     description: '',
     attachments: [] as VetAttachment[]
   });
+  const [lostSetupDraft, setLostSetupDraft] = useState<LostSetupDraft>({
+    zoomLevel: 0,
+    radiusMeters: 300,
+    approximateLostTime: ''
+  });
+  const [showLostTimeModal, setShowLostTimeModal] = useState(false);
 
   const title = useMemo(() => {
     switch (screen) {
@@ -275,6 +289,8 @@ export default function App() {
         return 'Encontré una mascota';
       case 'FoundResult':
         return 'Mascota encontrada';
+      case 'LostSetup':
+        return 'Estado si me pierdo';
     }
   }, [screen, selectedPet]);
 
@@ -407,6 +423,54 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const buildRadiusFromZoomLevel = (zoomLevel: number) => {
+    const minimum = 100;
+    const maximum = 2500;
+    const step = 80;
+    const computed = Math.round(maximum - zoomLevel * step);
+    return Math.min(maximum, Math.max(minimum, computed));
+  };
+
+  const handleLostStatusChange = async (isLost: boolean) => {
+    if (!selectedPet) return;
+
+    if (!isLost) {
+      await updatePetLostStatus(selectedPet.id, false);
+      return;
+    }
+
+    setLostSetupDraft({
+      zoomLevel: 0,
+      radiusMeters: buildRadiusFromZoomLevel(0),
+      approximateLostTime: ''
+    });
+    setShowLostTimeModal(false);
+    setScreen('LostSetup');
+  };
+
+  const handleConfirmLostRadius = () => {
+    setShowLostTimeModal(true);
+  };
+
+  const handleConfirmLostActivation = async () => {
+    if (!selectedPet) return;
+
+    const trimmedTime = lostSetupDraft.approximateLostTime.trim();
+    if (!trimmedTime) {
+      Alert.alert('Hora requerida', 'Ingresa una hora aproximada para continuar.');
+      return;
+    }
+
+    setShowLostTimeModal(false);
+    await updatePetLostStatus(selectedPet.id, true);
+
+    Alert.alert(
+      'Mascota marcada como perdida',
+      `Se confirmó el estado de pérdida con un radio estimado de ${lostSetupDraft.radiusMeters} metros y hora aproximada ${trimmedTime}. La visibilidad en mapa para otros usuarios se activará en la siguiente etapa.`
+    );
+    setScreen('PetDetail');
   };
 
   const savePetProfile = async () => {
@@ -1351,6 +1415,113 @@ export default function App() {
       );
     }
 
+    if (screen === 'LostSetup') {
+      const mapZoomValue = Math.min(30, Math.max(0, lostSetupDraft.zoomLevel));
+
+      return (
+        <View style={styles.form}>
+          <Card title="Definir zona de búsqueda">
+            <Text style={styles.helperText}>
+              Mové el mapa acercando o alejando para ajustar el radio donde creés que puede estar.
+            </Text>
+
+            <View style={styles.mapMock}>
+              <Text style={styles.mapMockTitle}>Mapa (simulado)</Text>
+              <Text style={styles.mapMockSub}>Zoom del mapa: {mapZoomValue}</Text>
+              <View style={styles.mapCircle}>
+                <Text style={styles.mapCircleText}>{lostSetupDraft.radiusMeters} m</Text>
+              </View>
+            </View>
+
+            <Text style={styles.fieldLabel}>Ajustar acercamiento / alejamiento</Text>
+            <View style={styles.zoomControls}>
+              <TouchableOpacity
+                style={styles.zoomButton}
+                onPress={() =>
+                  setLostSetupDraft((prev) => {
+                    const nextZoom = Math.max(0, prev.zoomLevel - 1);
+                    return {
+                      ...prev,
+                      zoomLevel: nextZoom,
+                      radiusMeters: buildRadiusFromZoomLevel(nextZoom)
+                    };
+                  })
+                }
+              >
+                <Text style={styles.zoomButtonText}>Alejar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.zoomButton}
+                onPress={() =>
+                  setLostSetupDraft((prev) => {
+                    const nextZoom = Math.min(30, prev.zoomLevel + 1);
+                    return {
+                      ...prev,
+                      zoomLevel: nextZoom,
+                      radiusMeters: buildRadiusFromZoomLevel(nextZoom)
+                    };
+                  })
+                }
+              >
+                <Text style={styles.zoomButtonText}>Acercar</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.radiusSummary}>Radio estimado: {lostSetupDraft.radiusMeters} metros</Text>
+          </Card>
+
+          <TouchableOpacity style={[styles.actionBtn, styles.linkBtn]} onPress={handleConfirmLostRadius}>
+            <Text style={styles.linkBtnText}>Confirmar radio</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.backBtn]}
+            onPress={() => {
+              setShowLostTimeModal(false);
+              setScreen('PetDetail');
+            }}
+          >
+            <Text style={styles.backBtnText}>Cancelar</Text>
+          </TouchableOpacity>
+
+          <Modal visible={showLostTimeModal} transparent animationType="fade" onRequestClose={() => setShowLostTimeModal(false)}>
+            <View style={styles.modalBackdrop}>
+              <View style={styles.modalCard}>
+                <Text style={styles.modalTitle}>Hora aproximada de pérdida</Text>
+                <Text style={styles.modalBody}>Ingresá la hora aproximada en que se perdió tu mascota.</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Ej: 18:45"
+                  value={lostSetupDraft.approximateLostTime}
+                  onChangeText={(value) =>
+                    setLostSetupDraft((prev) => ({
+                      ...prev,
+                      approximateLostTime: value
+                    }))
+                  }
+                />
+
+                <View style={styles.modalActions}>
+                  <TouchableOpacity style={[styles.actionBtn, styles.backBtn, styles.modalActionButton]} onPress={() => setShowLostTimeModal(false)}>
+                    <Text style={styles.backBtnText}>Volver</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, styles.linkBtn, styles.modalActionButton]}
+                    onPress={handleConfirmLostActivation}
+                    disabled={loading}
+                  >
+                    <Text style={styles.linkBtnText}>{loading ? 'Guardando...' : 'Confirmar pérdida'}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        </View>
+      );
+    }
+
+
     if (screen === 'PetDetail') {
       if (!selectedPet) {
         return (
@@ -1401,7 +1572,7 @@ export default function App() {
               <Text style={styles.switchLabel}>Activar si se pierde</Text>
               <Switch
                 value={selectedPet.is_lost}
-                onValueChange={(v) => updatePetLostStatus(selectedPet.id, v)}
+                onValueChange={handleLostStatusChange}
                 disabled={loading}
               />
             </View>
@@ -2222,6 +2393,64 @@ const styles = StyleSheet.create({
 
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   switchLabel: { color: '#334155', fontWeight: '700' },
+
+
+  helperText: { color: '#475569', fontWeight: '600' },
+  mapMock: {
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 14,
+    padding: 14,
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    gap: 6
+  },
+  mapMockTitle: { color: '#0f172a', fontSize: 16, fontWeight: '800' },
+  mapMockSub: { color: '#64748b', fontWeight: '600' },
+  mapCircle: {
+    marginTop: 4,
+    width: 120,
+    height: 120,
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: '#2563eb',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#dbeafe'
+  },
+  mapCircleText: { color: '#1d4ed8', fontWeight: '800' },
+  zoomControls: { flexDirection: 'row', gap: 10, marginTop: 6 },
+  zoomButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    backgroundColor: '#fff'
+  },
+  zoomButtonText: { color: '#0f172a', fontWeight: '800' },
+  radiusSummary: { color: '#0f172a', fontWeight: '700', marginTop: 4 },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.45)',
+    justifyContent: 'center',
+    padding: 18
+  },
+  modalCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 16,
+    gap: 10
+  },
+  modalTitle: { color: '#0f172a', fontSize: 18, fontWeight: '800' },
+  modalBody: { color: '#475569', fontWeight: '600' },
+  modalActions: { flexDirection: 'row', gap: 10 },
+  modalActionButton: { flex: 1 },
 
 
   badge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1 },
