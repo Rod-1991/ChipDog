@@ -9,7 +9,11 @@ export const addPetSchema = z.object({
   name: z.string().min(2, 'El nombre es obligatorio'),
   species: z.string().min(2, 'La especie es obligatoria'),
   breed: z.string().optional(),
-  color: z.string().optional(),
+  sex: z.string().optional(),
+  description: z.string().optional(),
+  weight_kg: z.coerce.number().positive().optional().or(z.literal('')),
+  sterilized: z.boolean().optional(),
+  chip_number: z.string().optional(),
   birth_year: z.coerce.number().int().min(1990).max(new Date().getFullYear()).optional(),
   photo_url: z.string().url().optional().or(z.literal(''))
 });
