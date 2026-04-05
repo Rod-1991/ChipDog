@@ -41,6 +41,10 @@ Notifications.setNotificationHandler({
 type Screen =
   | 'Login'
   | 'Home'
+  | 'PetList'
+  | 'NearbyMap'
+  | 'LostPetList'
+  | 'LostPetDetail'
   | 'AddPet'
   | 'PetDetail'
   | 'PetInfo'
@@ -120,6 +124,25 @@ type Vaccine = {
   notes: string | null;
   created_at: string;
 };
+
+type LostPetPin = {
+  id: number;
+  name: string;
+  species: string;
+  breed: string | null;
+  color: string | null;
+  photo_url: string | null;
+  lost_lat: number;
+  lost_lng: number;
+  lost_radius_meters: number | null;
+  lost_commune: string | null;
+  public_notes: string | null;
+  contact_primary_name: string | null;
+  owner_phone: string | null;
+  owner_whatsapp: string | null;
+};
+
+type NearbyLostPet = LostPetPin & { distance_m: number };
 
 type VetRecord = {
   id: string;
@@ -314,6 +337,17 @@ export default function App() {
   const [lostRadius, setLostRadius] = useState(500);
   const mapRef = useRef<MapView>(null);
 
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [nearbyLostPets, setNearbyLostPets] = useState<NearbyLostPet[]>([]);
+  const [allLostPets, setAllLostPets] = useState<LostPetPin[]>([]);
+  const [nearbyUserLoc, setNearbyUserLoc] = useState<{ lat: number; lng: number } | null>(null);
+  const nearbyMapRef = useRef<MapView>(null);
+  const [selectedLostPet, setSelectedLostPet] = useState<LostPetPin | null>(null);
+  const [lostListSpecies, setLostListSpecies] = useState<'Todos' | 'Perro' | 'Gato'>('Todos');
+  const [lostListCommune, setLostListCommune] = useState<string>('Todas');
+  const [lostPetPhotoUrl, setLostPetPhotoUrl] = useState<string | null>(null);
+  const [lostPetSignedUrls, setLostPetSignedUrls] = useState<Record<number, string | null>>({});
+
   const [vaccines, setVaccines] = useState<Vaccine[]>([]);
   const [showVaccineForm, setShowVaccineForm] = useState(false);
   const [editingVaccineId, setEditingVaccineId] = useState<number | null>(null);
@@ -347,30 +381,22 @@ export default function App() {
 
   const title = useMemo(() => {
     switch (screen) {
-      case 'Login':
-        return 'Login';
-      case 'Home':
-        return 'Mis mascotas';
-      case 'AddPet':
-        return 'Agregar mascota';
-      case 'PetDetail':
-        return selectedPet ? selectedPet.name : 'Perfil';
-      case 'PetInfo':
-        return 'Información';
-      case 'PetContact':
-        return 'Contacto';
-      case 'PetVetHistory':
-        return 'Historial Veterinario';
-      case 'PetVaccines':
-        return 'Vacunas';
-      case 'LinkTag':
-        return 'Vincular tag';
-      case 'LostPetMap':
-        return selectedPet ? `¿Dónde se perdió ${selectedPet.name}?` : 'Ubicación';
-      case 'FoundTag':
-        return 'Encontré una mascota';
-      case 'FoundResult':
-        return 'Mascota encontrada';
+      case 'Login':        return 'Login';
+      case 'Home':         return 'ChipDog';
+      case 'PetList':      return 'Mis Mascotas';
+      case 'NearbyMap':    return 'Mapa de perdidos';
+      case 'LostPetList':  return 'Mascotas perdidas';
+      case 'LostPetDetail':return selectedLostPet ? selectedLostPet.name : 'Detalle';
+      case 'AddPet':       return 'Agregar mascota';
+      case 'PetDetail':    return selectedPet ? selectedPet.name : 'Perfil';
+      case 'PetInfo':      return 'Información';
+      case 'PetContact':   return 'Contacto';
+      case 'PetVetHistory':return 'Historial Veterinario';
+      case 'PetVaccines':  return 'Vacunas';
+      case 'LinkTag':      return 'Vincular tag';
+      case 'LostPetMap':   return selectedPet ? `¿Dónde se perdió ${selectedPet.name}?` : 'Ubicación';
+      case 'FoundTag':     return 'Encontré una mascota';
+      case 'FoundResult':  return 'Mascota encontrada';
     }
   }, [screen, selectedPet]);
 
@@ -419,6 +445,35 @@ export default function App() {
     await supabase
       .from('user_push_tokens')
       .upsert({ user_id: user.id, token, updated_at: new Date().toISOString() });
+  };
+
+  const loadAllLostPets = async () => {
+    try {
+      const { data } = await supabase.rpc('get_all_lost_pets');
+      setAllLostPets((data as LostPetPin[]) ?? []);
+    } catch { /* silent */ }
+  };
+
+  const loadNearbyLostPets = async (requestPermission = false) => {
+    try {
+      let status: string;
+      if (requestPermission) {
+        ({ status } = await Location.requestForegroundPermissionsAsync());
+      } else {
+        ({ status } = await Location.getForegroundPermissionsAsync());
+      }
+      if (status !== 'granted') return;
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setNearbyUserLoc({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+      const { data } = await supabase.rpc('get_nearby_lost_pets', {
+        p_lat: loc.coords.latitude,
+        p_lng: loc.coords.longitude,
+        p_radius_km: 10,
+      });
+      setNearbyLostPets((data as NearbyLostPet[]) ?? []);
+    } catch {
+      // silent fail — nearby is optional
+    }
   };
 
   const loadHomePetPhotos = async (petsToResolve: Pet[]) => {
@@ -592,16 +647,24 @@ export default function App() {
     }
     setLoading(true);
     try {
+      // Reverse geocoding para obtener la comuna
+      let commune: string | null = null;
+      try {
+        const [geo] = await Location.reverseGeocodeAsync({ latitude: lostPin.lat, longitude: lostPin.lng });
+        commune = geo?.district ?? geo?.subregion ?? geo?.city ?? null;
+      } catch { /* si falla, guardamos sin comuna */ }
+
       const { error } = await supabase.from('pets').update({
         is_lost: true,
         lost_lat: lostPin.lat,
         lost_lng: lostPin.lng,
         lost_radius_meters: lostRadius,
+        lost_commune: commune,
       }).eq('id', selectedPet.id);
       if (error) { Alert.alert('Error', error.message); return; }
       setSelectedPet((p) => p ? { ...p, is_lost: true, lost_lat: lostPin.lat, lost_lng: lostPin.lng, lost_radius_meters: lostRadius } : p);
       await fetchPets();
-      Alert.alert('🚨 Alerta publicada', 'Tu mascota está marcada como perdida y los usuarios cercanos podrán verla.');
+      Alert.alert('🚨 Alerta publicada', `Tu mascota está marcada como perdida${commune ? ` en ${commune}` : ''} y los usuarios podrán verla en el mapa.`);
       setScreen('PetDetail');
     } finally {
       setLoading(false);
@@ -840,6 +903,7 @@ export default function App() {
 
     await fetchPets();
     await registerPushToken();
+    setIsLoggedIn(true);
     setScreen('Home');
   };
 
@@ -856,6 +920,10 @@ export default function App() {
     setPets([]);
     setSelectedPet(null);
     setPetPhotoSignedUrl(null);
+    setNearbyLostPets([]);
+    setAllLostPets([]);
+    setNearbyUserLoc(null);
+    setIsLoggedIn(false);
     setEmail('');
     setPassword('');
     setScreen('Login');
@@ -901,7 +969,7 @@ export default function App() {
     setShowBirthCalendar(false);
     setCalendarMonthDate(new Date());
     await fetchPets();
-    setScreen('Home');
+    setScreen('PetList');
   };
 
   const handleLinkTag = async () => {
@@ -1422,17 +1490,79 @@ export default function App() {
     setVaccineForm({ vaccine_name: '', applied_date: '', expiry_date: '', next_dose_date: '', veterinarian: '', clinic: '', batch_number: '', notes: '' });
   }, [screen]);
 
+  // Cargar todos los perdidos al llegar al Home (para el banner)
+  useEffect(() => {
+    if (screen === 'Home') loadAllLostPets();
+  }, [screen]);
+
+  // Signed URLs para lista de mascotas perdidas
+  useEffect(() => {
+    if (screen !== 'LostPetList') return;
+    const withPhoto = allLostPets.filter(p => p.photo_url);
+    if (!withPhoto.length) return;
+    Promise.all(
+      withPhoto.map(async (p) => {
+        const { data } = await supabase.storage.from('pet-photos').createSignedUrl(p.photo_url!, 60 * 60);
+        return [p.id, data?.signedUrl ?? null] as const;
+      })
+    ).then(entries => setLostPetSignedUrls(Object.fromEntries(entries)));
+  }, [screen, allLostPets.length]);
+
+  // Signed URL para foto de mascota perdida en detalle
+  useEffect(() => {
+    if (screen !== 'LostPetDetail' || !selectedLostPet?.photo_url) {
+      setLostPetPhotoUrl(null);
+      return;
+    }
+    // Reusar si ya la tenemos de la lista
+    if (lostPetSignedUrls[selectedLostPet.id]) {
+      setLostPetPhotoUrl(lostPetSignedUrls[selectedLostPet.id]);
+      return;
+    }
+    supabase.storage
+      .from('pet-photos')
+      .createSignedUrl(selectedLostPet.photo_url, 60 * 60)
+      .then(({ data }) => setLostPetPhotoUrl(data?.signedUrl ?? null));
+  }, [screen, selectedLostPet?.id]);
+
+  // Al entrar al NearbyMap: cargar todos los pines (sin filtro) + intentar ubicación
+  useEffect(() => {
+    if (screen !== 'NearbyMap') return;
+    // 1. Cargar todos los perdidos sin esperar ubicación
+    loadAllLostPets();
+    // 2. Intentar obtener ubicación para centrar el mapa
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const coords = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+        setNearbyUserLoc(coords);
+        setTimeout(() => {
+          nearbyMapRef.current?.animateToRegion({
+            latitude: coords.lat, longitude: coords.lng,
+            latitudeDelta: 0.08, longitudeDelta: 0.08,
+          }, 600);
+        }, 400);
+      } catch { /* sin ubicación, el mapa queda centrado en Santiago */ }
+    })();
+  }, [screen]);
+
   const handleBack = () => {
     switch (screen) {
-      case 'AddPet':        return setScreen('Home');
-      case 'PetDetail':     return setScreen('Home');
+      case 'PetList':       return setScreen('Home');
+      case 'NearbyMap':     return setScreen('Home');
+      case 'LostPetList':   return setScreen('NearbyMap');
+      case 'LostPetDetail': return setScreen('LostPetList');
+      case 'AddPet':        return setScreen('PetList');
+      case 'PetDetail':     return setScreen('PetList');
       case 'PetInfo':
       case 'PetContact':
       case 'PetVetHistory':
       case 'PetVaccines':
       case 'LinkTag':
       case 'LostPetMap':    return setScreen('PetDetail');
-      case 'FoundTag':      return setScreen('Login');
+      case 'FoundTag':      return setScreen(isLoggedIn ? 'Home' : 'Login');
       case 'FoundResult':   return setScreen('FoundTag');
       default: break;
     }
@@ -1573,6 +1703,56 @@ export default function App() {
     }
 
     if (screen === 'Home') {
+      const lostCount = allLostPets.length;
+      return (
+        <View style={styles.form}>
+          {/* Header */}
+          <View style={styles.homeHeader}>
+            <Text style={styles.homeHeaderEyebrow}>🐾  ChipDog</Text>
+            <Text style={styles.homeHeaderTitle}>Hola 👋</Text>
+            <Text style={styles.homeHeaderSubtitle}>¿Qué quieres hacer hoy?</Text>
+          </View>
+
+          {/* Alert mascotas perdidas cercanas */}
+          {lostCount > 0 && (
+            <TouchableOpacity style={styles.nearbyAlertBanner} onPress={() => setScreen('NearbyMap')} activeOpacity={0.85}>
+              <Text style={styles.nearbyAlertTitle}>🚨 {lostCount} mascota{lostCount > 1 ? 's' : ''} perdida{lostCount > 1 ? 's' : ''} cerca de ti</Text>
+              <Text style={styles.nearbyAlertSub}>Toca para ver el mapa →</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Grid de acciones */}
+          <TouchableOpacity style={[styles.dashCardFull, { borderTopColor: C.primary }]} onPress={() => setScreen('PetList')} activeOpacity={0.85}>
+            <Text style={styles.dashCardIcon}>🐶</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.dashCardTitle}>Mis Mascotas</Text>
+              <Text style={styles.dashCardHint}>Perfiles, vacunas e historial vet</Text>
+            </View>
+            <Text style={styles.petCardArrow}>›</Text>
+          </TouchableOpacity>
+
+          <View style={styles.dashRow}>
+            <TouchableOpacity style={[styles.dashCardHalf, { borderTopColor: C.accent }]} onPress={() => setScreen('NearbyMap')} activeOpacity={0.85}>
+              <Text style={styles.dashCardIcon}>🗺</Text>
+              <Text style={styles.dashCardTitle}>Mapa</Text>
+              <Text style={styles.dashCardHint}>Perdidos cerca de ti</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.dashCardHalf, { borderTopColor: C.success }]} onPress={() => setScreen('FoundTag')} activeOpacity={0.85}>
+              <Text style={styles.dashCardIcon}>🔍</Text>
+              <Text style={styles.dashCardTitle}>Escanear tag</Text>
+              <Text style={styles.dashCardHint}>Encontré una mascota</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.85}>
+            <Text style={styles.logoutBtnText}>Cerrar sesión</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    if (screen === 'PetList') {
       return (
         <View style={styles.form}>
           {/* Header */}
@@ -1632,10 +1812,6 @@ export default function App() {
               </TouchableOpacity>
             ))
           )}
-
-          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.85}>
-            <Text style={styles.logoutBtnText}>Cerrar sesión</Text>
-          </TouchableOpacity>
         </View>
       );
     }
@@ -1765,7 +1941,7 @@ export default function App() {
           </View>
 
           <Button title={loading ? 'Guardando...' : 'Guardar mascota'} onPress={handleCreatePet} disabled={loading} />
-          <Button title="Volver" onPress={() => setScreen('Home')} />
+          <Button title="Volver" onPress={() => setScreen('PetList')} />
         </View>
       );
     }
@@ -1775,7 +1951,7 @@ export default function App() {
         return (
           <View style={styles.form}>
             <Text>No hay mascota seleccionada.</Text>
-            <Button title="Volver" onPress={() => setScreen('Home')} />
+            <Button title="Volver" onPress={() => setScreen('PetList')} />
           </View>
         );
       }
@@ -2536,6 +2712,204 @@ export default function App() {
       );
     }
 
+    if (screen === 'NearbyMap') {
+      const initialRegion = { latitude: -33.4489, longitude: -70.6693, latitudeDelta: 0.12, longitudeDelta: 0.12 };
+
+      return (
+        <View style={{ flex: 1, gap: 0 }}>
+          {/* Header compacto */}
+          <View style={[styles.homeHeader, { margin: 16, marginBottom: 8 }]}>
+            <Text style={styles.homeHeaderEyebrow}>🗺  Mapa de perdidos</Text>
+            <Text style={styles.homeHeaderTitle}>
+              {allLostPets.length === 0 ? 'Sin reportes activos' : `${allLostPets.length} reportes activos`}
+            </Text>
+            <Text style={styles.homeHeaderSubtitle}>Toca un pin para ver la ficha de la mascota</Text>
+          </View>
+
+          {/* Mapa full */}
+          <View style={{ flex: 1, marginHorizontal: 16, borderRadius: 20, overflow: 'hidden' }}>
+            <MapView
+              ref={nearbyMapRef}
+              style={{ flex: 1 }}
+              initialRegion={initialRegion}
+              showsUserLocation
+              showsMyLocationButton
+            >
+              {allLostPets.map((pet) => (
+                <Marker
+                  key={pet.id}
+                  coordinate={{ latitude: pet.lost_lat, longitude: pet.lost_lng }}
+                  title={`🚨 ${pet.name}`}
+                  description={`${pet.species}${pet.breed ? ` · ${pet.breed}` : ''}${pet.lost_commune ? ` · ${pet.lost_commune}` : ''}`}
+                  pinColor="#EF4444"
+                  onCalloutPress={() => { setSelectedLostPet(pet); setScreen('LostPetDetail'); }}
+                />
+              ))}
+            </MapView>
+          </View>
+
+          {/* Botones */}
+          <View style={{ padding: 16, gap: 10 }}>
+            <TouchableOpacity
+              style={[styles.btnPrimary, { backgroundColor: C.accent }]}
+              onPress={() => setScreen('LostPetList')}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.btnPrimaryText}>📋  Ver lista completa</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen('Home')} activeOpacity={0.85}>
+              <Text style={styles.btnGhostText}>Volver al inicio</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      );
+    }
+
+    if (screen === 'LostPetList') {
+      const communes = ['Todas', ...Array.from(new Set(allLostPets.map(p => p.lost_commune).filter(Boolean) as string[])).sort()];
+      const speciesOptions: Array<'Todos' | 'Perro' | 'Gato'> = ['Todos', 'Perro', 'Gato'];
+
+      const filtered = allLostPets.filter(p => {
+        if (lostListSpecies !== 'Todos' && p.species !== lostListSpecies) return false;
+        if (lostListCommune !== 'Todas' && p.lost_commune !== lostListCommune) return false;
+        return true;
+      });
+
+      return (
+        <View style={styles.form}>
+          {/* Filtro especie */}
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {speciesOptions.map(s => (
+              <TouchableOpacity
+                key={s}
+                style={[styles.filterChip, lostListSpecies === s && styles.filterChipActive]}
+                onPress={() => setLostListSpecies(s)}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.filterChipText, lostListSpecies === s && styles.filterChipTextActive]}>
+                  {s === 'Todos' ? '🐾 Todos' : s === 'Perro' ? '🐶 Perros' : '🐱 Gatos'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Filtro comuna */}
+          {communes.length > 1 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -16, paddingHorizontal: 16 }}>
+              <View style={{ flexDirection: 'row', gap: 8, paddingRight: 8 }}>
+                {communes.map(c => (
+                  <TouchableOpacity
+                    key={c}
+                    style={[styles.filterChip, lostListCommune === c && styles.filterChipActive]}
+                    onPress={() => setLostListCommune(c)}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.filterChipText, lostListCommune === c && styles.filterChipTextActive]}>{c}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+          )}
+
+          <Text style={{ color: C.textLight, fontSize: 13, fontWeight: '600' }}>
+            {filtered.length} mascota{filtered.length !== 1 ? 's' : ''} encontrada{filtered.length !== 1 ? 's' : ''}
+          </Text>
+
+          {filtered.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateEmoji}>🎉</Text>
+              <Text style={styles.emptyStateTitle}>Sin resultados</Text>
+              <Text style={styles.emptyStateHint}>Prueba cambiando los filtros.</Text>
+            </View>
+          ) : (
+            filtered.map(pet => (
+              <TouchableOpacity
+                key={pet.id}
+                style={styles.petCard}
+                activeOpacity={0.85}
+                onPress={() => { setSelectedLostPet(pet); setScreen('LostPetDetail'); }}
+              >
+                <View style={styles.petCardPhotoWrap}>
+                  {lostPetSignedUrls[pet.id] ? (
+                    <Image source={{ uri: lostPetSignedUrls[pet.id]! }} style={styles.petCardPhoto} resizeMode="cover" />
+                  ) : (
+                    <View style={[styles.petCardPhoto, styles.avatarPlaceholder]}>
+                      <Text style={styles.avatarInitials}>{initialsFromName(pet.name)}</Text>
+                    </View>
+                  )}
+                </View>
+                <View style={{ flex: 1, gap: 3 }}>
+                  <Text style={styles.petCardName}>{pet.name}</Text>
+                  <Text style={styles.petCardBreed}>{pet.species}{pet.breed ? ` · ${pet.breed}` : ''}</Text>
+                  {pet.lost_commune && <Text style={{ fontSize: 12, color: C.textLight, fontWeight: '600' }}>📍 {pet.lost_commune}</Text>}
+                </View>
+                <Text style={styles.petCardArrow}>›</Text>
+              </TouchableOpacity>
+            ))
+          )}
+        </View>
+      );
+    }
+
+    if (screen === 'LostPetDetail' && selectedLostPet) {
+      const pet = selectedLostPet;
+      const waNumber = pet.owner_whatsapp?.replace(/\D/g, '');
+      return (
+        <View style={styles.form}>
+          {/* Hero */}
+          <View style={styles.petHero}>
+            {lostPetPhotoUrl ? (
+              <Image source={{ uri: lostPetPhotoUrl }} style={styles.petHeroAvatar} resizeMode="cover" />
+            ) : (
+              <View style={[styles.petHeroAvatar, styles.avatarPlaceholder]}>
+                <Text style={[styles.avatarInitials, { fontSize: 32 }]}>{initialsFromName(pet.name)}</Text>
+              </View>
+            )}
+            <Text style={styles.petHeroName}>{pet.name}</Text>
+            <Text style={styles.petHeroBreed}>{pet.species}{pet.breed ? ` · ${pet.breed}` : ''}</Text>
+            <View style={[styles.badge, styles.badgeDanger, { marginTop: 4 }]}>
+              <Text style={[styles.badgeText, styles.badgeTextDanger]}>🚨 Perdido</Text>
+            </View>
+          </View>
+
+          <Card>
+            {pet.color      && <InfoRow label="Color"   value={pet.color} />}
+            {pet.lost_commune && <InfoRow label="Comuna" value={pet.lost_commune} />}
+            {pet.contact_primary_name && <InfoRow label="Dueño" value={pet.contact_primary_name} />}
+          </Card>
+
+          {pet.public_notes && (
+            <Card title="Indicaciones" accent={C.warning}>
+              <Text style={{ color: C.text, lineHeight: 20 }}>{pet.public_notes}</Text>
+            </Card>
+          )}
+
+          {pet.owner_phone && (
+            <TouchableOpacity
+              style={styles.btnPrimary}
+              onPress={() => Linking.openURL(`tel:${pet.owner_phone}`)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.btnPrimaryText}>📞  Llamar al dueño</Text>
+            </TouchableOpacity>
+          )}
+          {waNumber && (
+            <TouchableOpacity
+              style={[styles.btnPrimary, { backgroundColor: '#25D366' }]}
+              onPress={() => Linking.openURL(`https://wa.me/${waNumber}?text=${encodeURIComponent(`Hola, vi el reporte de ${pet.name} en ChipDog 🐾`)}`)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.btnPrimaryText}>💬  WhatsApp</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen('LostPetList')} activeOpacity={0.85}>
+            <Text style={styles.btnGhostText}>Volver a la lista</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
     return (
       <View style={styles.form}>
         <TextInput
@@ -2551,6 +2925,8 @@ export default function App() {
     );
   };
 
+  const isFullScreenMap = screen === 'NearbyMap';
+
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
@@ -2558,16 +2934,22 @@ export default function App() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 6 : 0}
       >
-        {screen !== 'Home' && screen !== 'PetDetail' && screen !== 'Login' && screen !== 'FoundTag' && screen !== 'FoundResult' ? (
+        {!isFullScreenMap && screen !== 'Home' && screen !== 'PetList' && screen !== 'PetDetail' && screen !== 'Login' && screen !== 'FoundTag' && screen !== 'FoundResult' ? (
           <Text style={styles.title}>{title}</Text>
         ) : null}
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-        >
-          {renderScreen()}
-        </ScrollView>
+
+        {isFullScreenMap ? (
+          renderScreen()
+        ) : (
+          <ScrollView
+            contentContainerStyle={styles.scroll}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+          >
+            {renderScreen()}
+          </ScrollView>
+        )}
+
         {loading && <ActivityIndicator style={styles.loader} />}
 
         {/* Swipe-back desde borde izquierdo */}
@@ -2951,4 +3333,65 @@ const styles = StyleSheet.create({
   },
   lostRadiusBtnText: { fontWeight: '700', fontSize: 13, color: C.textLight },
   lostRadiusBtnTextActive: { color: C.white },
+
+  // ─── Dashboard Home ────────────────────────────────────────────────────────
+  nearbyAlertBanner: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: 16,
+    padding: 14,
+    borderLeftWidth: 4,
+    borderLeftColor: C.warning,
+    gap: 4,
+  },
+  nearbyAlertTitle: { color: '#92400E', fontWeight: '800', fontSize: 14 },
+  nearbyAlertSub:   { color: '#B45309', fontWeight: '600', fontSize: 12 },
+
+  dashRow: { flexDirection: 'row', gap: 12 },
+
+  dashCardFull: {
+    backgroundColor: C.white,
+    borderRadius: 18,
+    padding: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    borderTopWidth: 3,
+    shadowColor: C.primary,
+    shadowOpacity: 0.07,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  dashCardHalf: {
+    flex: 1,
+    backgroundColor: C.white,
+    borderRadius: 18,
+    padding: 16,
+    gap: 4,
+    borderTopWidth: 3,
+    shadowColor: C.primary,
+    shadowOpacity: 0.07,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  dashCardIcon:  { fontSize: 28 },
+  dashCardTitle: { fontSize: 15, fontWeight: '800', color: C.dark },
+  dashCardHint:  { fontSize: 12, color: C.textLight, fontWeight: '500' },
+
+  // ─── Filtros ───────────────────────────────────────────────────────────────
+  filterChip: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    backgroundColor: C.white,
+  },
+  filterChipActive: {
+    backgroundColor: C.primary,
+    borderColor: C.primary,
+  },
+  filterChipText:       { fontSize: 13, fontWeight: '700', color: C.textLight },
+  filterChipTextActive: { color: C.white },
 });
