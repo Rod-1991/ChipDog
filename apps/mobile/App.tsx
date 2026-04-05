@@ -22,6 +22,18 @@ import { addPetSchema, linkTagSchema, loginSchema } from '@chipdog/shared';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { Buffer } from 'buffer';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 type Screen =
   | 'Login'
@@ -72,6 +84,33 @@ type VetAttachment = {
   path: string;
   uri?: string;
   mimeType?: string | null;
+};
+
+type FoundPet = {
+  public_name: string;
+  species: string;
+  breed: string | null;
+  color: string | null;
+  public_notes: string | null;
+  contact_phone: string | null;
+  contact_whatsapp: string | null;
+  photo_url: string | null;
+  is_lost: boolean;
+  owner_name: string | null;
+};
+
+type Vaccine = {
+  id: number;
+  pet_id: number;
+  vaccine_name: string;
+  applied_date: string;
+  expiry_date: string | null;
+  next_dose_date: string | null;
+  veterinarian: string | null;
+  clinic: string | null;
+  batch_number: string | null;
+  notes: string | null;
+  created_at: string;
 };
 
 type VetRecord = {
@@ -217,7 +256,7 @@ export default function App() {
   });
 
   const [foundCode, setFoundCode] = useState('');
-  const [foundPet, setFoundPet] = useState<any | null>(null);
+  const [foundPet, setFoundPet] = useState<FoundPet | null>(null);
 
   const [petForm, setPetForm] = useState({
     name: '',
@@ -233,6 +272,20 @@ export default function App() {
   const [profileBirthCalendarMonth, setProfileBirthCalendarMonth] = useState(() => new Date());
 
   const [tagCode, setTagCode] = useState('');
+
+  const [vaccines, setVaccines] = useState<Vaccine[]>([]);
+  const [showVaccineForm, setShowVaccineForm] = useState(false);
+  const [editingVaccineId, setEditingVaccineId] = useState<number | null>(null);
+  const [vaccineForm, setVaccineForm] = useState({
+    vaccine_name: '',
+    applied_date: '',
+    expiry_date: '',
+    next_dose_date: '',
+    veterinarian: '',
+    clinic: '',
+    batch_number: '',
+    notes: ''
+  });
 
   const [vetHistory, setVetHistory] = useState<VetRecord[]>([]);
   const [showNewVetRecord, setShowNewVetRecord] = useState(false);
@@ -299,6 +352,30 @@ export default function App() {
     const nextPets = (data as Pet[]) ?? [];
     setPets(nextPets);
     await loadHomePetPhotos(nextPets);
+  };
+
+  const registerPushToken = async () => {
+    if (!Device.isDevice) return; // no funciona en simulador
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    if (finalStatus !== 'granted') return;
+
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+    if (!projectId) return;
+
+    const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
+    if (!token) return;
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    await supabase
+      .from('user_push_tokens')
+      .upsert({ user_id: user.id, token, updated_at: new Date().toISOString() });
   };
 
   const loadHomePetPhotos = async (petsToResolve: Pet[]) => {
@@ -615,7 +692,7 @@ export default function App() {
     }
 
     if (!data || data.length === 0) {
-      Alert.alert('No encontrado', 'Este tag no está vinculado o la mascota no está marcada como perdida.');
+      Alert.alert('No encontrado', 'Este tag no está registrado o no tiene una mascota vinculada.');
       return;
     }
 
@@ -640,6 +717,7 @@ export default function App() {
     }
 
     await fetchPets();
+    await registerPushToken();
     setScreen('Home');
   };
 
@@ -1099,6 +1177,128 @@ export default function App() {
     if (screen !== 'PetVetHistory' || !selectedPet) return;
     loadVetHistory(selectedPet.id);
   }, [screen, selectedPet?.id]);
+
+  // Reset vet state al salir de la pantalla o cambiar de mascota
+  useEffect(() => {
+    if (screen === 'PetVetHistory') return;
+    setSelectedVetRecord(null);
+    setEditingVetRecordId(null);
+    setShowNewVetRecord(false);
+    setVetForm({ date: '', doctor: '', clinic: '', reason: '', symptoms: [], diagnosis: '', treatment: '', description: '', attachments: [] });
+    setSymptomInput('');
+  }, [screen]);
+
+  const fetchVaccines = async (petId: number) => {
+    const { data, error } = await supabase
+      .from('pet_vaccines')
+      .select('*')
+      .eq('pet_id', petId)
+      .order('applied_date', { ascending: false });
+    if (error) { Alert.alert('Error cargando vacunas', error.message); return; }
+    setVaccines((data as Vaccine[]) ?? []);
+  };
+
+  const saveVaccine = async () => {
+    if (!selectedPet) return;
+    const name = vaccineForm.vaccine_name.trim();
+    const date = vaccineForm.applied_date.trim();
+    if (!name || !date) {
+      Alert.alert('Validación', 'Nombre y fecha de aplicación son requeridos');
+      return;
+    }
+    setLoading(true);
+    try {
+      const payload = {
+        pet_id: selectedPet.id,
+        vaccine_name: name,
+        applied_date: date,
+        expiry_date: normalizeStringOrNull(vaccineForm.expiry_date),
+        next_dose_date: normalizeStringOrNull(vaccineForm.next_dose_date),
+        veterinarian: normalizeStringOrNull(vaccineForm.veterinarian),
+        clinic: normalizeStringOrNull(vaccineForm.clinic),
+        batch_number: normalizeStringOrNull(vaccineForm.batch_number),
+        notes: normalizeStringOrNull(vaccineForm.notes)
+      };
+      const { error } = editingVaccineId
+        ? await supabase.from('pet_vaccines').update(payload).eq('id', editingVaccineId)
+        : await supabase.from('pet_vaccines').insert(payload);
+      if (error) { Alert.alert('Error guardando vacuna', error.message); return; }
+      resetVaccineForm();
+      await fetchVaccines(selectedPet.id);
+      Alert.alert(editingVaccineId ? 'Vacuna actualizada ✅' : 'Vacuna registrada ✅');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteVaccine = async (id: number) => {
+    if (!selectedPet) return;
+    Alert.alert('Eliminar vacuna', '¿Estás seguro?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar', style: 'destructive',
+        onPress: async () => {
+          if (loading) return;
+          setLoading(true);
+          try {
+            const { error } = await supabase.from('pet_vaccines').delete().eq('id', id);
+            if (error) { Alert.alert('Error', error.message); return; }
+            await fetchVaccines(selectedPet.id);
+          } finally {
+            setLoading(false);
+          }
+        }
+      }
+    ]);
+  };
+
+  const resetVaccineForm = () => {
+    setVaccineForm({ vaccine_name: '', applied_date: '', expiry_date: '', next_dose_date: '', veterinarian: '', clinic: '', batch_number: '', notes: '' });
+    setShowVaccineForm(false);
+    setEditingVaccineId(null);
+  };
+
+  const startEditVaccine = (v: Vaccine) => {
+    setVaccineForm({
+      vaccine_name: v.vaccine_name,
+      applied_date: v.applied_date,
+      expiry_date: v.expiry_date ?? '',
+      next_dose_date: v.next_dose_date ?? '',
+      veterinarian: v.veterinarian ?? '',
+      clinic: v.clinic ?? '',
+      batch_number: v.batch_number ?? '',
+      notes: v.notes ?? ''
+    });
+    setEditingVaccineId(v.id);
+    setShowVaccineForm(true);
+  };
+
+  const vaccineStatus = (v: Vaccine): { label: string; color: string } => {
+    if (!v.expiry_date) return { label: 'Registrada', color: '#6b7280' };
+    const parts = v.expiry_date.split('/');
+    if (parts.length !== 3) return { label: 'Registrada', color: '#6b7280' };
+    const [d, m, y] = parts.map(Number);
+    const expiry = new Date(y < 100 ? 2000 + y : y, m - 1, d);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const diff = (expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
+    if (diff < 0) return { label: 'Vencida', color: '#dc2626' };
+    if (diff <= 30) return { label: 'Vence pronto', color: '#f59e0b' };
+    return { label: 'Vigente', color: '#16a34a' };
+  };
+
+  useEffect(() => {
+    if (screen !== 'PetVaccines' || !selectedPet) return;
+    fetchVaccines(selectedPet.id);
+  }, [screen, selectedPet?.id]);
+
+  // Reset vaccine form al salir de la pantalla
+  useEffect(() => {
+    if (screen === 'PetVaccines') return;
+    setShowVaccineForm(false);
+    setEditingVaccineId(null);
+    setVaccineForm({ vaccine_name: '', applied_date: '', expiry_date: '', next_dose_date: '', veterinarian: '', clinic: '', batch_number: '', notes: '' });
+  }, [screen]);
 
   const renderScreen = () => {
     if (screen === 'Login') {
@@ -1631,14 +1831,131 @@ export default function App() {
     if (screen === 'PetVaccines') {
       return (
         <View style={styles.form}>
-          <Card title="Vacunas">
-            <Text style={{ color: '#334155' }}>
-              Aquí verás y gestionarás las vacunas aplicadas, próximas dosis y recordatorios.
-            </Text>
-          </Card>
-          <TouchableOpacity style={[styles.actionBtn, styles.backBtn]} onPress={() => setScreen('PetDetail')}>
-            <Text style={styles.backBtnText}>Volver al perfil</Text>
-          </TouchableOpacity>
+          {/* Formulario nueva / editar vacuna */}
+          {showVaccineForm ? (
+            <Card title={editingVaccineId ? 'Editar vacuna' : 'Nueva vacuna'}>
+              <TextInput
+                style={styles.input}
+                placeholder="Nombre de la vacuna *"
+                value={vaccineForm.vaccine_name}
+                onChangeText={(v) => setVaccineForm((p) => ({ ...p, vaccine_name: v }))}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Fecha aplicación (dd/mm/aaaa) *"
+                value={vaccineForm.applied_date}
+                onChangeText={(v) => setVaccineForm((p) => ({ ...p, applied_date: v }))}
+                keyboardType="numeric"
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Fecha vencimiento (dd/mm/aaaa)"
+                value={vaccineForm.expiry_date}
+                onChangeText={(v) => setVaccineForm((p) => ({ ...p, expiry_date: v }))}
+                keyboardType="numeric"
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Próxima dosis (dd/mm/aaaa)"
+                value={vaccineForm.next_dose_date}
+                onChangeText={(v) => setVaccineForm((p) => ({ ...p, next_dose_date: v }))}
+                keyboardType="numeric"
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Veterinario"
+                value={vaccineForm.veterinarian}
+                onChangeText={(v) => setVaccineForm((p) => ({ ...p, veterinarian: v }))}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Clínica"
+                value={vaccineForm.clinic}
+                onChangeText={(v) => setVaccineForm((p) => ({ ...p, clinic: v }))}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="N° Lote"
+                value={vaccineForm.batch_number}
+                onChangeText={(v) => setVaccineForm((p) => ({ ...p, batch_number: v }))}
+              />
+              <TextInput
+                style={[styles.input, { minHeight: 60 }]}
+                placeholder="Notas"
+                value={vaccineForm.notes}
+                onChangeText={(v) => setVaccineForm((p) => ({ ...p, notes: v }))}
+                multiline
+              />
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.linkBtn]}
+                onPress={saveVaccine}
+                disabled={loading}
+              >
+                <Text style={styles.linkBtnText}>{loading ? 'Guardando...' : 'Guardar vacuna'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.actionBtn, styles.backBtn]} onPress={resetVaccineForm}>
+                <Text style={styles.backBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+            </Card>
+          ) : (
+            <>
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.linkBtn]}
+                onPress={() => { setShowVaccineForm(true); setEditingVaccineId(null); }}
+              >
+                <Text style={styles.linkBtnText}>+ Registrar vacuna</Text>
+              </TouchableOpacity>
+
+              {vaccines.length === 0 ? (
+                <Card>
+                  <Text style={{ color: '#94a3b8', textAlign: 'center' }}>
+                    Aún no hay vacunas registradas
+                  </Text>
+                </Card>
+              ) : (
+                vaccines.map((v) => {
+                  const status = vaccineStatus(v);
+                  return (
+                    <Card key={v.id}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={{ fontWeight: '700', fontSize: 15, color: '#0f172a', flex: 1 }}>
+                          {v.vaccine_name}
+                        </Text>
+                        <View style={{ backgroundColor: status.color, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 }}>
+                          <Text style={{ color: '#fff', fontSize: 11, fontWeight: '600' }}>{status.label}</Text>
+                        </View>
+                      </View>
+                      <InfoRow label="Aplicada" value={v.applied_date} />
+                      {v.expiry_date ? <InfoRow label="Vence" value={v.expiry_date} /> : null}
+                      {v.next_dose_date ? <InfoRow label="Próxima dosis" value={v.next_dose_date} /> : null}
+                      {v.veterinarian ? <InfoRow label="Veterinario" value={v.veterinarian} /> : null}
+                      {v.clinic ? <InfoRow label="Clínica" value={v.clinic} /> : null}
+                      {v.batch_number ? <InfoRow label="N° Lote" value={v.batch_number} /> : null}
+                      {v.notes ? <InfoRow label="Notas" value={v.notes} /> : null}
+                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                        <TouchableOpacity
+                          style={[styles.actionBtn, styles.linkBtn, { flex: 1, marginTop: 0 }]}
+                          onPress={() => startEditVaccine(v)}
+                        >
+                          <Text style={styles.linkBtnText}>Editar</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.actionBtn, { flex: 1, marginTop: 0, backgroundColor: '#fee2e2', borderRadius: 10 }]}
+                          onPress={() => deleteVaccine(v.id)}
+                        >
+                          <Text style={{ color: '#dc2626', fontWeight: '600', textAlign: 'center' }}>Eliminar</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </Card>
+                  );
+                })
+              )}
+
+              <TouchableOpacity style={[styles.actionBtn, styles.backBtn]} onPress={() => setScreen('PetDetail')}>
+                <Text style={styles.backBtnText}>Volver al perfil</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       );
     }
