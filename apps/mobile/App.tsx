@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Button,
+  PanResponder,
   SafeAreaView,
   ScrollView,
   KeyboardAvoidingView,
@@ -137,6 +138,30 @@ if (!supabaseUrl || !supabaseAnonKey) {
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 const vetAttachmentsBucket = 'pet-vet-attachments';
 
+// ─── Design System ────────────────────────────────────────────────────────────
+const C = {
+  primary:       '#6C47FF',
+  primaryLight:  '#EDE9FE',
+  primaryDark:   '#4C1D95',
+  accent:        '#FF6B6B',
+  accentLight:   '#FFF1F2',
+  success:       '#059669',
+  successLight:  '#ECFDF5',
+  warning:       '#F59E0B',
+  warningLight:  '#FFFBEB',
+  danger:        '#EF4444',
+  dangerLight:   '#FEF2F2',
+  dark:          '#1E1B4B',
+  text:          '#374151',
+  textLight:     '#6B7280',
+  textMuted:     '#9CA3AF',
+  border:        '#E5E7EB',
+  surface:       '#F9FAFB',
+  bg:            '#F5F3FF',
+  white:         '#FFFFFF',
+};
+// ─────────────────────────────────────────────────────────────────────────────
+
 const normalizeStringOrNull = (v: string) => {
   const t = (v ?? '').trim();
   return t.length ? t : null;
@@ -165,10 +190,15 @@ const InfoRow = ({ label, value }: InfoRowProps) => (
   </View>
 );
 
-type CardProps = { title?: string; children: any };
-const Card = ({ title, children }: CardProps) => (
+type CardProps = { title?: string; accent?: string; children: any };
+const Card = ({ title, accent, children }: CardProps) => (
   <View style={styles.card}>
-    {title ? <Text style={styles.cardHeader}>{title}</Text> : null}
+    {title ? (
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        {accent ? <View style={{ width: 4, height: 18, borderRadius: 2, backgroundColor: accent }} /> : null}
+        <Text style={styles.cardHeader}>{title}</Text>
+      </View>
+    ) : null}
     <View style={{ gap: 10 }}>{children}</View>
   </View>
 );
@@ -1300,68 +1330,151 @@ export default function App() {
     setVaccineForm({ vaccine_name: '', applied_date: '', expiry_date: '', next_dose_date: '', veterinarian: '', clinic: '', batch_number: '', notes: '' });
   }, [screen]);
 
+  const handleBack = () => {
+    switch (screen) {
+      case 'AddPet':        return setScreen('Home');
+      case 'PetDetail':     return setScreen('Home');
+      case 'PetInfo':
+      case 'PetContact':
+      case 'PetVetHistory':
+      case 'PetVaccines':
+      case 'LinkTag':       return setScreen('PetDetail');
+      case 'FoundTag':      return setScreen('Login');
+      case 'FoundResult':   return setScreen('FoundTag');
+      default: break;
+    }
+  };
+
+  const canGoBack = screen !== 'Login' && screen !== 'Home';
+
+  // Ref para que el PanResponder (creado una sola vez) llame siempre
+  // a la versión actualizada de handleBack sin closure stale
+  const handleBackRef = useRef(handleBack);
+  handleBackRef.current = handleBack;
+
+  const swipePan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_evt, gs) =>
+        gs.dx > 10 && Math.abs(gs.dy) < 50,
+      onPanResponderRelease: (_evt, gs) => {
+        if (gs.dx > 50) handleBackRef.current();
+      },
+    })
+  ).current;
+
   const renderScreen = () => {
     if (screen === 'Login') {
       return (
-        <View style={styles.form}>
-          <TextInput
-            value={email}
-            onChangeText={setEmail}
-            style={styles.input}
-            placeholder="Email"
-            autoCapitalize="none"
-            keyboardType="email-address"
-          />
-          <TextInput
-            value={password}
-            onChangeText={setPassword}
-            style={styles.input}
-            placeholder="Contraseña"
-            secureTextEntry
-          />
-          <Button title={loading ? 'Ingresando...' : 'Ingresar'} onPress={handleLogin} disabled={loading} />
-          <Button title="Encontré una mascota (escaneo tag)" onPress={() => setScreen('FoundTag')} />
+        <View style={styles.loginWrap}>
+          <View style={styles.loginBrand}>
+            <Text style={styles.loginEmoji}>🐾</Text>
+            <Text style={styles.loginTitle}>ChipDog</Text>
+            <Text style={styles.loginSubtitle}>El hogar digital de tu peludo</Text>
+          </View>
+
+          <View style={styles.loginForm}>
+            <TextInput
+              value={email}
+              onChangeText={setEmail}
+              style={styles.input}
+              placeholder="Email"
+              placeholderTextColor={C.textMuted}
+              autoCapitalize="none"
+              keyboardType="email-address"
+            />
+            <TextInput
+              value={password}
+              onChangeText={setPassword}
+              style={styles.input}
+              placeholder="Contraseña"
+              placeholderTextColor={C.textMuted}
+              secureTextEntry
+            />
+            <TouchableOpacity style={styles.btnPrimary} onPress={handleLogin} disabled={loading} activeOpacity={0.85}>
+              <Text style={styles.btnPrimaryText}>{loading ? 'Ingresando...' : 'Ingresar'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen('FoundTag')} activeOpacity={0.85}>
+              <Text style={styles.btnGhostText}>🔍  Encontré una mascota</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       );
     }
 
     if (screen === 'FoundTag') {
       return (
-        <View style={styles.form}>
-          <Text style={{ fontWeight: '600' }}>Ingresa el código del tag</Text>
+        <View style={styles.foundWrap}>
+          <Text style={styles.foundEmoji}>🐕</Text>
+          <Text style={styles.foundTitle}>¿Encontraste a alguien?</Text>
+          <Text style={styles.foundSubtitle}>Ingresa el código del tag del collar para ver su información</Text>
           <TextInput
-            style={styles.input}
-            placeholder="Ej: 1234"
+            style={[styles.input, { marginTop: 8 }]}
+            placeholder="Ej: ABC-1234"
+            placeholderTextColor={C.textMuted}
             value={foundCode}
             onChangeText={setFoundCode}
             autoCapitalize="characters"
           />
-          <Button title={loading ? 'Buscando...' : 'Buscar'} onPress={handleFoundLookup} disabled={loading} />
-          <Button title="Volver" onPress={() => setScreen('Login')} />
+          <TouchableOpacity style={styles.btnPrimary} onPress={handleFoundLookup} disabled={loading} activeOpacity={0.85}>
+            <Text style={styles.btnPrimaryText}>{loading ? 'Buscando...' : 'Buscar mascota'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen('Login')} activeOpacity={0.85}>
+            <Text style={styles.btnGhostText}>Volver</Text>
+          </TouchableOpacity>
         </View>
       );
     }
 
     if (screen === 'FoundResult') {
       return (
-        <View style={styles.form}>
+        <View style={styles.foundWrap}>
           {foundPet ? (
             <>
-              <Text style={styles.detailName}>{foundPet.public_name}</Text>
-              <Text>Especie: {foundPet.species}</Text>
-              <Text>Raza: {foundPet.breed ?? 'N/D'}</Text>
-              <Text>Color: {foundPet.color ?? 'N/D'}</Text>
-
-              {foundPet.public_notes ? <Text>Info: {foundPet.public_notes}</Text> : null}
-              {foundPet.contact_phone ? <Text>Tel: {foundPet.contact_phone}</Text> : null}
-              {foundPet.contact_whatsapp ? <Text>WhatsApp: {foundPet.contact_whatsapp}</Text> : null}
+              <Text style={styles.foundEmoji}>
+                {foundPet.is_lost ? '🚨' : '🐾'}
+              </Text>
+              {foundPet.is_lost && (
+                <View style={styles.lostAlertBanner}>
+                  <Text style={styles.lostAlertText}>Esta mascota está reportada como PERDIDA</Text>
+                </View>
+              )}
+              <Text style={styles.foundPetName}>{foundPet.public_name}</Text>
+              <Card>
+                <InfoRow label="Especie"  value={foundPet.species} />
+                {foundPet.breed ? <InfoRow label="Raza"   value={foundPet.breed} /> : null}
+                {foundPet.color ? <InfoRow label="Color"  value={foundPet.color} /> : null}
+                {foundPet.owner_name ? <InfoRow label="Dueño" value={foundPet.owner_name} /> : null}
+              </Card>
+              {foundPet.public_notes ? (
+                <Card title="Indicaciones" accent={C.warning}>
+                  <Text style={{ color: C.text, lineHeight: 20 }}>{foundPet.public_notes}</Text>
+                </Card>
+              ) : null}
+              {foundPet.contact_phone ? (
+                <TouchableOpacity style={styles.btnPrimary} onPress={() => Linking.openURL(`tel:${foundPet.contact_phone}`)} activeOpacity={0.85}>
+                  <Text style={styles.btnPrimaryText}>📞  Llamar al dueño</Text>
+                </TouchableOpacity>
+              ) : null}
+              {foundPet.contact_whatsapp ? (
+                <TouchableOpacity
+                  style={[styles.btnPrimary, { backgroundColor: '#25D366' }]}
+                  onPress={() => Linking.openURL(`https://wa.me/${foundPet.contact_whatsapp!.replace(/\D/g, '')}?text=${encodeURIComponent(`Hola, encontré a ${foundPet.public_name} 🐾`)}`)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.btnPrimaryText}>💬  WhatsApp</Text>
+                </TouchableOpacity>
+              ) : null}
             </>
           ) : (
-            <Text>No hay datos.</Text>
+            <Text style={{ color: C.textLight, textAlign: 'center' }}>No hay datos disponibles.</Text>
           )}
-
-          <Button title="Buscar otro tag" onPress={() => setScreen('FoundTag')} />
-          <Button title="Volver" onPress={() => setScreen('Login')} />
+          <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen('FoundTag')} activeOpacity={0.85}>
+            <Text style={styles.btnGhostText}>Buscar otro tag</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen('Login')} activeOpacity={0.85}>
+            <Text style={styles.btnGhostText}>Volver al inicio</Text>
+          </TouchableOpacity>
         </View>
       );
     }
@@ -1369,54 +1482,67 @@ export default function App() {
     if (screen === 'Home') {
       return (
         <View style={styles.form}>
+          {/* Header */}
           <View style={styles.homeHeader}>
-            <Text style={styles.homeHeaderEyebrow}>Donde Está Mi Mascota</Text>
-            <Text style={styles.homeHeaderTitle}>Mis mascotas</Text>
-            <Text style={styles.homeHeaderSubtitle}>Gestiona sus perfiles y revisa su estado en segundos.</Text>
+            <Text style={styles.homeHeaderEyebrow}>🐾  ChipDog</Text>
+            <Text style={styles.homeHeaderTitle}>Mis Mascotas</Text>
+            <Text style={styles.homeHeaderSubtitle}>Todo sobre tu mascota, siempre contigo.</Text>
           </View>
 
-          <TouchableOpacity style={styles.addPetCta} onPress={() => setScreen('AddPet')}>
-            <Text style={styles.addPetCtaText}>+ Agregar Mascota</Text>
+          {/* CTA agregar */}
+          <TouchableOpacity style={styles.addPetCta} onPress={() => setScreen('AddPet')} activeOpacity={0.85}>
+            <Text style={styles.addPetCtaText}>+  Agregar mascota</Text>
           </TouchableOpacity>
-          
-          {pets.map((pet) => (
-            <TouchableOpacity
-              key={pet.id}
-              onPress={async () => {
-                await loadPetDetail(pet.id);
-                setScreen('PetDetail');
-              }}
-              style={styles.listCard}
-            >
-              <View style={styles.homePetImageWrap}>
-                {petSignedUrls[pet.id] ? (
-                  <Image source={{ uri: petSignedUrls[pet.id] ?? undefined }} style={styles.homePetImage} resizeMode="cover" />
-                ) : (
-                  <View style={[styles.homePetImage, styles.avatarPlaceholder]}>
-                    <Text style={styles.avatarInitials}>{initialsFromName(pet.name)}</Text>
+
+          {/* Lista de mascotas */}
+          {pets.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateEmoji}>🐶</Text>
+              <Text style={styles.emptyStateTitle}>Aún no tienes mascotas</Text>
+              <Text style={styles.emptyStateHint}>Agrega a tu peludo y empieza a cuidarlo como se merece.</Text>
+            </View>
+          ) : (
+            pets.map((pet) => (
+              <TouchableOpacity
+                key={pet.id}
+                onPress={async () => {
+                  await loadPetDetail(pet.id);
+                  setScreen('PetDetail');
+                }}
+                style={styles.petCard}
+                activeOpacity={0.85}
+              >
+                <View style={styles.petCardPhotoWrap}>
+                  {petSignedUrls[pet.id] ? (
+                    <Image source={{ uri: petSignedUrls[pet.id] ?? undefined }} style={styles.petCardPhoto} resizeMode="cover" />
+                  ) : (
+                    <View style={[styles.petCardPhoto, styles.avatarPlaceholder]}>
+                      <Text style={styles.avatarInitials}>{initialsFromName(pet.name)}</Text>
+                    </View>
+                  )}
+                  {pet.is_lost && <View style={styles.petCardLostDot} />}
+                </View>
+
+                <View style={{ flex: 1, gap: 3 }}>
+                  <Text style={styles.petCardName}>{pet.name}</Text>
+                  <Text style={styles.petCardBreed}>
+                    {pet.species}{pet.breed ? ` · ${pet.breed}` : ''}
+                  </Text>
+                  <View style={[styles.badge, pet.is_lost ? styles.badgeDanger : styles.badgeOk, { alignSelf: 'flex-start', marginTop: 2 }]}>
+                    <Text style={[styles.badgeText, pet.is_lost ? styles.badgeTextDanger : styles.badgeTextOk]}>
+                      {pet.is_lost ? '🚨 Perdido' : '🏠 En casa'}
+                    </Text>
                   </View>
-                )}
-              </View>
+                </View>
 
-              <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>{pet.name}</Text>
-                <Text style={styles.cardSubtitle}>
-                  {pet.species}
-                  {pet.breed ? ` · ${pet.breed}` : ''}
-                </Text>
-              </View>
+                <Text style={styles.petCardArrow}>›</Text>
+              </TouchableOpacity>
+            ))
+          )}
 
-              <View style={[styles.badge, pet.is_lost ? styles.badgeDanger : styles.badgeOk]}>
-                <Text style={[styles.badgeText, pet.is_lost ? styles.badgeTextDanger : styles.badgeTextOk]}>
-                  {pet.is_lost ? 'Perdido' : 'En casa'}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-
-          <View style={styles.logoutWrap}>
-            <Button title="Cerrar sesión" onPress={handleLogout} />
-          </View>
+          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.85}>
+            <Text style={styles.logoutBtnText}>Cerrar sesión</Text>
+          </TouchableOpacity>
         </View>
       );
     }
@@ -1566,73 +1692,83 @@ export default function App() {
       const badgeTextStyle = selectedPet.is_lost ? styles.badgeTextDanger : styles.badgeTextOk;
 
       return (
-        <View style={{ gap: 14 }}>
-          <View style={styles.profileHeaderCompact}>
+        <View style={{ gap: 16 }}>
+          {/* Hero */}
+          <View style={styles.petHero}>
             <TouchableOpacity
-              style={styles.avatarWrap}
+              style={styles.petHeroAvatarWrap}
               onPress={() => pickAndUploadPetPhoto(selectedPet.id)}
               disabled={loading}
               activeOpacity={0.85}
             >
               {petPhotoSignedUrl ? (
-                <Image source={{ uri: petPhotoSignedUrl }} style={styles.avatar} resizeMode="cover" />
+                <Image source={{ uri: petPhotoSignedUrl }} style={styles.petHeroAvatar} resizeMode="cover" />
               ) : (
-                <View style={[styles.avatar, styles.avatarPlaceholder]}>
-                  <Text style={styles.avatarInitials}>{initialsFromName(selectedPet.name)}</Text>
+                <View style={[styles.petHeroAvatar, styles.avatarPlaceholder]}>
+                  <Text style={[styles.avatarInitials, { fontSize: 36 }]}>{initialsFromName(selectedPet.name)}</Text>
                 </View>
               )}
+              <View style={styles.petHeroCameraBtn}>
+                <Text style={{ fontSize: 14 }}>📷</Text>
+              </View>
             </TouchableOpacity>
 
-            <View style={{ flex: 1, gap: 6 }}>
-              <Text style={styles.profileName}>{selectedPet.name}</Text>
-              <Text style={styles.profileSub}>
-                {selectedPet.species}
-                {selectedPet.breed ? ` · ${selectedPet.breed}` : ''}
-              </Text>
-              <Text style={styles.changePhotoHint}>{loading ? 'Subiendo...' : 'Toca para cambiar foto'}</Text>
-              <View style={[styles.badge, badgeStyle, { alignSelf: 'flex-start' }]}>
-                <Text style={[styles.badgeText, badgeTextStyle]}>{statusLabel}</Text>
-              </View>
+            <Text style={styles.petHeroName}>{selectedPet.name}</Text>
+            <Text style={styles.petHeroBreed}>
+              {selectedPet.species}{selectedPet.breed ? ` · ${selectedPet.breed}` : ''}
+            </Text>
+            <View style={[styles.badge, badgeStyle, { alignSelf: 'center', marginTop: 6 }]}>
+              <Text style={[styles.badgeText, badgeTextStyle]}>{selectedPet.is_lost ? '🚨 Perdido' : '🏠 En casa'}</Text>
             </View>
           </View>
 
-          <Card title="Estado">
+          {/* Switch perdido */}
+          <Card>
             <View style={styles.switchRow}>
-              <Text style={styles.switchLabel}>Activar si se pierde</Text>
+              <Text style={styles.switchLabel}>🚨  Activar modo perdido</Text>
               <Switch
                 value={selectedPet.is_lost}
                 onValueChange={(v) => updatePetLostStatus(selectedPet.id, v)}
                 disabled={loading}
+                trackColor={{ false: C.border, true: C.danger }}
+                thumbColor={C.white}
               />
             </View>
           </Card>
 
-          <TouchableOpacity style={styles.navCard} onPress={() => setScreen('PetVetHistory')}>
-            <Text style={styles.navCardTitle}>Historial Veterinario</Text>
-            <Text style={styles.navCardHint}>Abrir historial clínico y controles</Text>
+          {/* Nav grid 2x2 */}
+          <View style={styles.navGrid}>
+            <TouchableOpacity style={[styles.navGridCard, { borderTopColor: C.primary }]} onPress={() => setScreen('PetVetHistory')} activeOpacity={0.85}>
+              <Text style={styles.navGridIcon}>🏥</Text>
+              <Text style={styles.navGridTitle}>Historial Vet</Text>
+              <Text style={styles.navGridHint}>Visitas y controles</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.navGridCard, { borderTopColor: C.success }]} onPress={() => setScreen('PetVaccines')} activeOpacity={0.85}>
+              <Text style={styles.navGridIcon}>💉</Text>
+              <Text style={styles.navGridTitle}>Vacunas</Text>
+              <Text style={styles.navGridHint}>Cartilla al día</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.navGridCard, { borderTopColor: C.warning }]} onPress={() => setScreen('PetInfo')} activeOpacity={0.85}>
+              <Text style={styles.navGridIcon}>ℹ️</Text>
+              <Text style={styles.navGridTitle}>Información</Text>
+              <Text style={styles.navGridHint}>Perfil completo</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.navGridCard, { borderTopColor: C.accent }]} onPress={() => setScreen('PetContact')} activeOpacity={0.85}>
+              <Text style={styles.navGridIcon}>📞</Text>
+              <Text style={styles.navGridTitle}>Contacto</Text>
+              <Text style={styles.navGridHint}>Dueño y emergencias</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity style={styles.btnPrimary} onPress={() => setScreen('LinkTag')} activeOpacity={0.85}>
+            <Text style={styles.btnPrimaryText}>🏷️  Vincular tag NFC / QR</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.navCard} onPress={() => setScreen('PetVaccines')}>
-            <Text style={styles.navCardTitle}>Vacunas</Text>
-            <Text style={styles.navCardHint}>Abrir cartilla y próximas dosis</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.navCard} onPress={() => setScreen('PetInfo')}>
-            <Text style={styles.navCardTitle}>Información</Text>
-            <Text style={styles.navCardHint}>Color, nacimiento, sexo, peso y salud</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.navCard} onPress={() => setScreen('PetContact')}>
-            <Text style={styles.navCardTitle}>Contacto</Text>
-            <Text style={styles.navCardHint}>Visible para quien escanea la mascota</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={[styles.actionBtn, styles.linkBtn]} onPress={() => setScreen('LinkTag')}>
-            <Text style={styles.linkBtnText}>Vincular tag</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={[styles.actionBtn, styles.backBtn]} onPress={() => setScreen('Home')}>
-            <Text style={styles.backBtnText}>Volver</Text>
+          <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen('Home')} activeOpacity={0.85}>
+            <Text style={styles.btnGhostText}>← Volver a mis mascotas</Text>
           </TouchableOpacity>
         </View>
       );
@@ -2228,7 +2364,9 @@ export default function App() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 6 : 0}
       >
-        {screen !== 'Home' && screen !== 'PetDetail' ? <Text style={styles.title}>{title}</Text> : null}
+        {screen !== 'Home' && screen !== 'PetDetail' && screen !== 'Login' && screen !== 'FoundTag' && screen !== 'FoundResult' ? (
+          <Text style={styles.title}>{title}</Text>
+        ) : null}
         <ScrollView
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
@@ -2237,343 +2375,350 @@ export default function App() {
           {renderScreen()}
         </ScrollView>
         {loading && <ActivityIndicator style={styles.loader} />}
+
+        {/* Swipe-back desde borde izquierdo */}
+        {canGoBack && (
+          <View
+            pointerEvents="box-only"
+            style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 30 }}
+            {...swipePan.panHandlers}
+          />
+        )}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8fafc' },
-  scroll: { padding: 16, paddingBottom: 28 },
-  title: { fontSize: 24, fontWeight: '700', paddingHorizontal: 16, paddingTop: 16 },
 
-  form: { gap: 12 },
+  // ─── Layout ────────────────────────────────────────────────────────────────
+  container: { flex: 1, backgroundColor: C.bg },
+  scroll:    { padding: 16, paddingBottom: 36 },
+  title:     { fontSize: 22, fontWeight: '800', color: C.dark, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 },
+  form:      { gap: 14 },
+  loader:    { marginBottom: 24 },
 
+  // ─── Input ─────────────────────────────────────────────────────────────────
   input: {
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 10,
-    padding: 12,
-    backgroundColor: '#fff',
-    color: '#0f172a'
+    borderWidth: 1.5,
+    borderColor: C.border,
+    borderRadius: 14,
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    backgroundColor: C.white,
+    color: C.dark,
+    fontSize: 15,
+    fontWeight: '500',
   },
   multiline: { minHeight: 90, textAlignVertical: 'top' },
 
-  loader: { marginBottom: 24 },
-
-  listCard: {
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 18,
+  // ─── Card ──────────────────────────────────────────────────────────────────
+  card: {
+    backgroundColor: C.white,
+    borderRadius: 20,
     padding: 16,
-    backgroundColor: '#fff',
+    shadowColor: C.primary,
+    shadowOpacity: 0.07,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  cardHeader: { fontSize: 13, fontWeight: '800', color: C.dark, textTransform: 'uppercase', letterSpacing: 0.5 },
+
+  // ─── Login ─────────────────────────────────────────────────────────────────
+  loginWrap: { flex: 1, justifyContent: 'center', gap: 32, paddingTop: 16 },
+  loginBrand: { alignItems: 'center', gap: 6 },
+  loginEmoji: { fontSize: 56 },
+  loginTitle: { fontSize: 36, fontWeight: '900', color: C.dark, letterSpacing: -1 },
+  loginSubtitle: { fontSize: 15, color: C.textLight, fontWeight: '500' },
+  loginForm: { gap: 12 },
+
+  // ─── Found Pet ─────────────────────────────────────────────────────────────
+  foundWrap: { gap: 14, paddingTop: 8 },
+  foundEmoji: { fontSize: 52, textAlign: 'center' },
+  foundTitle: { fontSize: 24, fontWeight: '900', color: C.dark, textAlign: 'center' },
+  foundSubtitle: { fontSize: 14, color: C.textLight, textAlign: 'center', lineHeight: 20 },
+  foundPetName: { fontSize: 28, fontWeight: '900', color: C.dark, textAlign: 'center' },
+  lostAlertBanner: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: 12,
+    padding: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: C.warning,
+  },
+  lostAlertText: { color: '#92400E', fontWeight: '700', fontSize: 13 },
+
+  // ─── Home ──────────────────────────────────────────────────────────────────
+  homeHeader: {
+    borderRadius: 22,
+    padding: 22,
+    backgroundColor: C.dark,
+    marginBottom: 2,
+    shadowColor: C.dark,
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 14,
+    elevation: 4,
+  },
+  homeHeaderEyebrow: { color: C.primaryLight, fontWeight: '700', fontSize: 13, marginBottom: 6 },
+  homeHeaderTitle: { color: C.white, fontSize: 30, fontWeight: '900', letterSpacing: -0.5 },
+  homeHeaderSubtitle: { color: '#94A3B8', marginTop: 6, fontSize: 13, lineHeight: 18 },
+
+  addPetCta: {
+    backgroundColor: C.primary,
+    borderRadius: 16,
+    paddingVertical: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: C.primary,
+    shadowOpacity: 0.35,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  addPetCtaText: { color: C.white, fontWeight: '900', fontSize: 16, letterSpacing: 0.2 },
+
+  // Pet card en Home
+  petCard: {
+    backgroundColor: C.white,
+    borderRadius: 20,
+    padding: 14,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-    minHeight: 124
+    shadowColor: C.primary,
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    elevation: 2,
   },
-  cardTitle: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
-  cardSubtitle: { color: '#475569', fontSize: 15, marginTop: 2 },
+  petCardPhotoWrap: { position: 'relative' },
+  petCardPhoto: { width: 72, height: 72, borderRadius: 999 },
+  petCardLostDot: {
+    position: 'absolute', top: 2, right: 2,
+    width: 14, height: 14, borderRadius: 7,
+    backgroundColor: C.danger,
+    borderWidth: 2, borderColor: C.white,
+  },
+  petCardName:  { fontSize: 17, fontWeight: '800', color: C.dark },
+  petCardBreed: { fontSize: 13, color: C.textLight, fontWeight: '500', marginTop: 2 },
+  petCardArrow: { fontSize: 22, color: C.textMuted, fontWeight: '300' },
 
-  homeHeader: {
-    borderRadius: 18,
-    padding: 18,
-    backgroundColor: '#0f172a',
-    marginBottom: 4
+  emptyState: { alignItems: 'center', gap: 10, paddingVertical: 32 },
+  emptyStateEmoji: { fontSize: 52 },
+  emptyStateTitle: { fontSize: 18, fontWeight: '800', color: C.dark },
+  emptyStateHint: { fontSize: 14, color: C.textLight, textAlign: 'center', lineHeight: 20, maxWidth: 260 },
+
+  logoutBtn: { marginTop: 4, paddingVertical: 12, alignItems: 'center' },
+  logoutBtnText: { color: C.textLight, fontWeight: '600', fontSize: 14 },
+  logoutWrap: { marginTop: 8, marginBottom: 14 },
+
+  // ─── PetDetail Hero ────────────────────────────────────────────────────────
+  petHero: {
+    alignItems: 'center',
+    paddingVertical: 20,
+    backgroundColor: C.white,
+    borderRadius: 24,
+    shadowColor: C.primary,
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 14,
+    elevation: 3,
+    gap: 6,
   },
-  homeHeaderEyebrow: { color: '#93c5fd', fontWeight: '700', marginBottom: 6 },
-  homeHeaderTitle: { color: '#fff', fontSize: 28, fontWeight: '800' },
-  homeHeaderSubtitle: { color: '#cbd5e1', marginTop: 6, fontSize: 14 },
-  addPetCta: {
-    backgroundColor: '#2563eb',
+  petHeroAvatarWrap: { position: 'relative' },
+  petHeroAvatar: { width: 110, height: 110, borderRadius: 999 },
+  petHeroCameraBtn: {
+    position: 'absolute', bottom: 2, right: 2,
+    backgroundColor: C.white,
     borderRadius: 14,
+    width: 28, height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  petHeroName:  { fontSize: 26, fontWeight: '900', color: C.dark, marginTop: 4 },
+  petHeroBreed: { fontSize: 14, color: C.textLight, fontWeight: '500' },
+
+  // Nav grid 2x2
+  navGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  navGridCard: {
+    width: '47.5%',
+    backgroundColor: C.white,
+    borderRadius: 18,
+    padding: 16,
+    gap: 6,
+    borderTopWidth: 3,
+    shadowColor: C.primary,
+    shadowOpacity: 0.07,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  navGridIcon:  { fontSize: 26 },
+  navGridTitle: { fontSize: 15, fontWeight: '800', color: C.dark },
+  navGridHint:  { fontSize: 12, color: C.textLight, fontWeight: '500' },
+
+  // Keep legacy nav card keys (used nowhere now but safe to keep)
+  navCard:      { backgroundColor: C.white, borderRadius: 16, padding: 14, gap: 4 },
+  navCardTitle: { fontSize: 17, fontWeight: '800', color: C.dark },
+  navCardHint:  { color: C.textLight, fontWeight: '600' },
+
+  // ─── Buttons ───────────────────────────────────────────────────────────────
+  btnPrimary: {
+    backgroundColor: C.primary,
+    borderRadius: 16,
+    paddingVertical: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: C.primary,
+    shadowOpacity: 0.3,
+    shadowOffset: { width: 0, height: 5 },
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  btnPrimaryText: { color: C.white, fontWeight: '800', fontSize: 15, letterSpacing: 0.2 },
+
+  btnGhost: {
+    backgroundColor: C.white,
+    borderRadius: 16,
     paddingVertical: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#1d4ed8',
-    shadowOpacity: 0.2,
-    shadowOffset: { width: 0, height: 8 },
-    shadowRadius: 10,
-    elevation: 2
+    borderWidth: 1.5,
+    borderColor: C.border,
   },
-  addPetCtaText: { color: '#fff', fontWeight: '900', fontSize: 17 },
+  btnGhostText: { color: C.dark, fontWeight: '700', fontSize: 15 },
 
-  selectInput: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  selectInputText: { color: '#0f172a', fontWeight: '600' },
-  selectChevron: { color: '#475569', fontWeight: '800' },
-  selectMenu: {
-    marginTop: 6,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 12,
-    overflow: 'hidden'
-  },
-  selectOption: { paddingVertical: 12, paddingHorizontal: 12 },
-  selectOptionActive: { backgroundColor: '#eff6ff' },
-  selectOptionText: { color: '#0f172a', fontWeight: '600' },
-  selectOptionTextActive: { color: '#1d4ed8' },
-
-  calendarCard: {
-    marginTop: 8,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 14,
-    padding: 10
-  },
-  calendarHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  calendarArrowBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#f1f5f9'
-  },
-  calendarArrowText: { fontSize: 18, color: '#0f172a', fontWeight: '700' },
-  calendarMonthTitle: { color: '#0f172a', fontWeight: '800', textTransform: 'capitalize' },
-  calendarWeekRow: { flexDirection: 'row', marginBottom: 6 },
-  calendarWeekDay: { flex: 1, textAlign: 'center', color: '#64748b', fontWeight: '700' },
-  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap', rowGap: 6 },
-  calendarDayBtn: {
-    width: '14.285%',
-    aspectRatio: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 8
-  },
-  calendarDayBtnDisabled: { opacity: 0 },
-  calendarDayBtnSelected: { backgroundColor: '#2563eb' },
-  calendarDayText: { color: '#0f172a', fontWeight: '600' },
-  calendarDayTextSelected: { color: '#fff', fontWeight: '800' },
-
-  homePetImageWrap: {
-    width: 90,
-    height: 90,
-    borderRadius: 18,
-    overflow: 'hidden',
-    backgroundColor: '#e2e8f0'
-  },
-  homePetImage: {
-    width: 90,
-    height: 90,
-    borderRadius: 18
-  },
-  logoutWrap: { marginTop: 8, marginBottom: 14 },
-
-  profileHeader: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    padding: 14,
-    flexDirection: 'row',
-    gap: 14,
-    alignItems: 'center'
-  },
-  profileHeaderCompact: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    padding: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14
-  },
-  avatarWrap: {
-    width: 92,
-    height: 92,
-    borderRadius: 18,
-    overflow: 'hidden'
-  },
-  avatar: {
-    width: 92,
-    height: 92,
-    borderRadius: 18
-  },
-  avatarPlaceholder: {
-    backgroundColor: '#0f172a',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  avatarInitials: { color: '#fff', fontSize: 26, fontWeight: '800', letterSpacing: 1 },
-  profileName: { fontSize: 22, fontWeight: '800', color: '#0f172a' },
-  profileSub: { color: '#475569', fontSize: 14, fontWeight: '600' },
-  changePhotoHint: { color: '#2563eb', fontSize: 13, fontWeight: '700' },
-
-
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    padding: 14
-  },
-  cardHeader: { fontSize: 14, fontWeight: '800', color: '#0f172a', marginBottom: 10 },
-
-  fieldLabel: { color: '#334155', fontWeight: '700', marginBottom: 4 },
-
-  labeledInlineRow: { flexDirection: 'row', gap: 10, alignItems: 'stretch' },
-  leftTitleBox: {
-    width: 130,
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 10,
-    backgroundColor: '#f8fafc',
-    justifyContent: 'center',
-    paddingHorizontal: 10
-  },
-  leftTitleText: { color: '#334155', fontWeight: '800', fontSize: 13 },
-  inlineValueInput: { flex: 1, marginBottom: 0 },
-  sectionBlockTitle: { color: '#334155', fontWeight: '800', marginTop: 2 },
-  largeBlockInput: { minHeight: 96 },
-
-  calendarInlineBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    backgroundColor: '#fff'
-  },
-  calendarInlineBtnText: { color: '#0f172a', fontWeight: '700' },
-
-  referencePhotosRow: { flexDirection: 'row', gap: 10 },
-  referencePhotoBox: {
-    flex: 1,
-    minHeight: 84,
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#f8fafc'
-  },
-  referencePhotoText: { color: '#64748b', fontWeight: '700' },
-
-  symptomInputRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  symptomInput: { flex: 1 },
-  symptomChipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  symptomChip: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-    backgroundColor: '#e2e8f0'
-  },
-  symptomChipText: { color: '#0f172a', fontWeight: '700' },
-
-  attachmentBtnsRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  smallInlineBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    backgroundColor: '#fff'
-  },
-  smallInlineBtnText: { color: '#0f172a', fontWeight: '800' },
-  attachmentChip: {
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    backgroundColor: '#f8fafc'
-  },
-  attachmentChipText: { color: '#334155', fontWeight: '700' },
-  attachmentEditChip: {
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    backgroundColor: '#f8fafc',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8
-  },
-  removeAttachmentBtn: {
-    backgroundColor: '#fee2e2',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6
-  },
-  removeAttachmentBtnText: { color: '#b91c1c', fontWeight: '800' },
-
-  historyItemCard: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 14,
-    padding: 12
-  },
-  historyItemDate: { color: '#64748b', fontWeight: '700' },
-  historyItemReason: { color: '#0f172a', fontWeight: '800', fontSize: 16, marginTop: 2 },
-
-  historyDetailBox: {
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 10,
-    backgroundColor: '#f8fafc',
-    padding: 10
-  },
-  historyDetailText: { color: '#0f172a', fontWeight: '700' },
-  historyEmptyText: { color: '#64748b', fontWeight: '600' },
-
-  navCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    padding: 14,
-    gap: 4
-  },
-  navCardTitle: { fontSize: 17, fontWeight: '800', color: '#0f172a' },
-  navCardHint: { color: '#64748b', fontWeight: '600' },
-
-  row: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
-  rowLabel: { color: '#64748b', fontWeight: '700' },
-  rowValue: { color: '#0f172a', fontWeight: '700', flexShrink: 1, textAlign: 'right' },
-
-  switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  switchLabel: { color: '#334155', fontWeight: '700' },
-
-
-  badge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1 },
-  badgeText: { fontSize: 12, fontWeight: '900' },
-  badgeOk: { backgroundColor: '#ecfeff', borderColor: '#06b6d4' },
-  badgeDanger: { backgroundColor: '#fff1f2', borderColor: '#fb7185' },
-  badgeTextOk: { color: '#0e7490' },
-  badgeTextDanger: { color: '#be123c' },
-
+  // Legacy action buttons (still used in vet/vaccine screens)
   actionRow: { flexDirection: 'row', gap: 10 },
   actionBtn: {
     borderRadius: 14,
-    paddingVertical: 12,
+    paddingVertical: 13,
     paddingHorizontal: 14,
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
   },
-  actionBtnPrimary: { backgroundColor: '#0f172a' },
-  actionBtnPrimaryText: { color: '#fff', fontWeight: '900' },
-  actionBtnGhost: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#cbd5e1' },
-  actionBtnGhostText: { color: '#0f172a', fontWeight: '900' },
+  actionBtnPrimary:     { backgroundColor: C.dark },
+  actionBtnPrimaryText: { color: C.white, fontWeight: '900' },
+  actionBtnGhost:       { backgroundColor: C.white, borderWidth: 1.5, borderColor: C.border },
+  actionBtnGhostText:   { color: C.dark, fontWeight: '900' },
 
-  saveBtn: { backgroundColor: '#16a34a' },
-  saveBtnText: { color: '#fff', fontWeight: '900', fontSize: 16 },
+  saveBtn:     { backgroundColor: C.success },
+  saveBtnText: { color: C.white, fontWeight: '900', fontSize: 15 },
 
-  deleteBtn: { backgroundColor: '#dc2626' },
-  deleteBtnText: { color: '#fff', fontWeight: '900', fontSize: 16 },
+  deleteBtn:     { backgroundColor: C.danger },
+  deleteBtnText: { color: C.white, fontWeight: '900', fontSize: 15 },
 
-  linkBtn: { backgroundColor: '#2563eb' },
-  linkBtnText: { color: '#fff', fontWeight: '900', fontSize: 16 },
+  linkBtn:     { backgroundColor: C.primary },
+  linkBtnText: { color: C.white, fontWeight: '900', fontSize: 15 },
 
-  backBtn: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0' },
-  backBtnText: { color: '#0f172a', fontWeight: '900' },
+  backBtn:     { backgroundColor: C.white, borderWidth: 1.5, borderColor: C.border },
+  backBtnText: { color: C.dark, fontWeight: '900' },
 
-  importantNote: { color: '#b45309', fontWeight: '700' },
+  // ─── Badges ────────────────────────────────────────────────────────────────
+  badge:         { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999 },
+  badgeText:     { fontSize: 12, fontWeight: '700' },
+  badgeOk:       { backgroundColor: C.successLight },
+  badgeDanger:   { backgroundColor: C.dangerLight },
+  badgeTextOk:   { color: C.success },
+  badgeTextDanger: { color: C.danger },
 
-  detailName: { fontSize: 22, fontWeight: '700' }
+  // ─── Data rows ─────────────────────────────────────────────────────────────
+  row:      { flexDirection: 'row', justifyContent: 'space-between', gap: 10, paddingVertical: 4 },
+  rowLabel: { color: C.textLight, fontWeight: '600', fontSize: 14 },
+  rowValue: { color: C.dark, fontWeight: '700', fontSize: 14, flexShrink: 1, textAlign: 'right' },
+
+  switchRow:   { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  switchLabel: { flex: 1, color: C.text, fontWeight: '700', fontSize: 15 },
+
+  // ─── Select / Dropdown ─────────────────────────────────────────────────────
+  selectInput:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  selectInputText:    { color: C.dark, fontWeight: '600', fontSize: 15 },
+  selectChevron:      { color: C.textLight, fontWeight: '800' },
+  selectMenu:         { marginTop: 6, backgroundColor: C.white, borderWidth: 1.5, borderColor: C.border, borderRadius: 14, overflow: 'hidden' },
+  selectOption:       { paddingVertical: 13, paddingHorizontal: 14 },
+  selectOptionActive: { backgroundColor: C.primaryLight },
+  selectOptionText:       { color: C.dark, fontWeight: '600' },
+  selectOptionTextActive: { color: C.primary, fontWeight: '700' },
+
+  // ─── Calendar ──────────────────────────────────────────────────────────────
+  calendarCard:          { marginTop: 8, backgroundColor: C.white, borderWidth: 1.5, borderColor: C.border, borderRadius: 16, padding: 12 },
+  calendarHeader:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  calendarArrowBtn:      { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: C.surface },
+  calendarArrowText:     { fontSize: 18, color: C.dark, fontWeight: '700' },
+  calendarMonthTitle:    { color: C.dark, fontWeight: '800', textTransform: 'capitalize' },
+  calendarWeekRow:       { flexDirection: 'row', marginBottom: 6 },
+  calendarWeekDay:       { flex: 1, textAlign: 'center', color: C.textLight, fontWeight: '700', fontSize: 12 },
+  calendarGrid:          { flexDirection: 'row', flexWrap: 'wrap', rowGap: 6 },
+  calendarDayBtn:        { width: '14.285%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 10 },
+  calendarDayBtnDisabled:  { opacity: 0 },
+  calendarDayBtnSelected:  { backgroundColor: C.primary },
+  calendarDayText:         { color: C.dark, fontWeight: '600' },
+  calendarDayTextSelected: { color: C.white, fontWeight: '800' },
+  calendarInlineBtn:     { paddingVertical: 11, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.white },
+  calendarInlineBtnText: { color: C.dark, fontWeight: '700' },
+
+  // ─── Profile (legacy, still used in some places) ───────────────────────────
+  homePetImageWrap: { width: 72, height: 72, borderRadius: 999, overflow: 'hidden', backgroundColor: C.surface },
+  homePetImage:     { width: 72, height: 72, borderRadius: 999 },
+  profileHeader:         { backgroundColor: C.white, borderRadius: 20, padding: 16, flexDirection: 'row', gap: 14, alignItems: 'center' },
+  profileHeaderCompact:  { backgroundColor: C.white, borderRadius: 20, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 14 },
+  avatarWrap:        { width: 92, height: 92, borderRadius: 999, overflow: 'hidden' },
+  avatar:            { width: 92, height: 92, borderRadius: 999 },
+  avatarPlaceholder: { backgroundColor: C.dark, alignItems: 'center', justifyContent: 'center' },
+  avatarInitials:    { color: C.white, fontSize: 26, fontWeight: '800', letterSpacing: 1 },
+  profileName:       { fontSize: 22, fontWeight: '800', color: C.dark },
+  profileSub:        { color: C.textLight, fontSize: 14, fontWeight: '600' },
+  changePhotoHint:   { color: C.primary, fontSize: 12, fontWeight: '600' },
+
+  // ─── Form fields ───────────────────────────────────────────────────────────
+  fieldLabel:       { color: C.text, fontWeight: '700', marginBottom: 4, fontSize: 13 },
+  labeledInlineRow: { flexDirection: 'row', gap: 10, alignItems: 'stretch' },
+  leftTitleBox:     { width: 130, borderWidth: 1.5, borderColor: C.border, borderRadius: 12, backgroundColor: C.surface, justifyContent: 'center', paddingHorizontal: 10 },
+  leftTitleText:    { color: C.text, fontWeight: '800', fontSize: 13 },
+  inlineValueInput: { flex: 1, marginBottom: 0 },
+  sectionBlockTitle:{ color: C.text, fontWeight: '800', marginTop: 2 },
+  largeBlockInput:  { minHeight: 96 },
+
+  // ─── Reference photos ──────────────────────────────────────────────────────
+  referencePhotosRow: { flexDirection: 'row', gap: 10 },
+  referencePhotoBox:  { flex: 1, minHeight: 84, borderWidth: 1.5, borderColor: C.border, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: C.surface },
+  referencePhotoText: { color: C.textLight, fontWeight: '700', fontSize: 13 },
+
+  // ─── Symptoms ──────────────────────────────────────────────────────────────
+  symptomInputRow:  { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  symptomInput:     { flex: 1 },
+  symptomChipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  symptomChip:      { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 999, backgroundColor: C.primaryLight },
+  symptomChipText:  { color: C.primary, fontWeight: '700', fontSize: 13 },
+
+  // ─── Attachments ───────────────────────────────────────────────────────────
+  attachmentBtnsRow:     { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  smallInlineBtn:        { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.white },
+  smallInlineBtnText:    { color: C.dark, fontWeight: '800', fontSize: 13 },
+  attachmentChip:        { borderWidth: 1.5, borderColor: C.border, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 10, backgroundColor: C.surface },
+  attachmentChipText:    { color: C.text, fontWeight: '700', fontSize: 13 },
+  attachmentEditChip:    { borderWidth: 1.5, borderColor: C.border, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 10, backgroundColor: C.surface, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  removeAttachmentBtn:   { backgroundColor: C.dangerLight, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  removeAttachmentBtnText: { color: C.danger, fontWeight: '800', fontSize: 12 },
+
+  // ─── Vet history ───────────────────────────────────────────────────────────
+  historyItemCard:   { backgroundColor: C.white, borderRadius: 16, padding: 14, shadowColor: C.primary, shadowOpacity: 0.05, shadowOffset: { width: 0, height: 3 }, shadowRadius: 8, elevation: 2 },
+  historyItemDate:   { color: C.textLight, fontWeight: '600', fontSize: 12 },
+  historyItemReason: { color: C.dark, fontWeight: '800', fontSize: 16, marginTop: 3 },
+  historyDetailBox:  { borderRadius: 12, backgroundColor: C.surface, padding: 12 },
+  historyDetailText: { color: C.dark, fontWeight: '700', fontSize: 14 },
+  historyEmptyText:  { color: C.textLight, fontWeight: '600', textAlign: 'center' },
+
+  // ─── Misc ──────────────────────────────────────────────────────────────────
+  listCard:    { backgroundColor: C.white, borderRadius: 20, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 14, shadowColor: C.primary, shadowOpacity: 0.06, shadowOffset: { width: 0, height: 4 }, shadowRadius: 10, elevation: 2 },
+  cardTitle:   { fontSize: 17, fontWeight: '800', color: C.dark },
+  cardSubtitle:{ color: C.textLight, fontSize: 14, marginTop: 2, fontWeight: '500' },
+  importantNote: { color: '#92400E', fontWeight: '700', fontSize: 13 },
+  detailName:  { fontSize: 24, fontWeight: '800', color: C.dark },
 });
