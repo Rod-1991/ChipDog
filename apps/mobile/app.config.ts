@@ -12,11 +12,14 @@ const config: ExpoConfig = {
     bundleIdentifier: 'com.chipdog.app',
     supportsTablet: false,
     infoPlist: {
-      UIBackgroundModes: ['remote-notification']
+      UIBackgroundModes: ['remote-notification'],
+      NSLocationWhenInUseUsageDescription: 'ChipDog necesita tu ubicación para marcar dónde se perdió tu mascota.',
+      NSLocationAlwaysAndWhenInUseUsageDescription: 'ChipDog necesita tu ubicación para marcar dónde se perdió tu mascota.'
     }
   },
   plugins: [
-    'expo-notifications'
+    'expo-notifications',
+    'expo-location'
   ],
   extra: {
     supabaseUrl: process.env.SUPABASE_URL,

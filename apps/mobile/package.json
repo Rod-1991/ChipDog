@@ -21,9 +21,11 @@
     "expo-document-picker": "~13.0.3",
     "expo-file-system": "~19.0.21",
     "expo-image-picker": "~17.0.10",
+    "expo-location": "~19.0.8",
     "expo-notifications": "~0.32.16",
     "react": "19.1.0",
-    "react-native": "0.81.5"
+    "react-native": "0.81.5",
+    "react-native-maps": "1.20.1"
   },
   "devDependencies": {
     "@types/react": "~19.1.10",

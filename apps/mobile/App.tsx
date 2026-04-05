@@ -25,6 +25,8 @@ import * as DocumentPicker from 'expo-document-picker';
 import { Buffer } from 'buffer';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import * as Location from 'expo-location';
+import MapView, { Circle, Marker } from 'react-native-maps';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -47,7 +49,8 @@ type Screen =
   | 'PetVaccines'
   | 'LinkTag'
   | 'FoundTag'
-  | 'FoundResult';
+  | 'FoundResult'
+  | 'LostPetMap';
 
 type Pet = {
   id: number;
@@ -76,6 +79,10 @@ type Pet = {
 
   vet_name?: string | null;
   vet_phone?: string | null;
+
+  lost_lat?: number | null;
+  lost_lng?: number | null;
+  lost_radius_meters?: number | null;
 };
 
 type VetAttachment = {
@@ -303,6 +310,10 @@ export default function App() {
 
   const [tagCode, setTagCode] = useState('');
 
+  const [lostPin, setLostPin] = useState<{ lat: number; lng: number } | null>(null);
+  const [lostRadius, setLostRadius] = useState(500);
+  const mapRef = useRef<MapView>(null);
+
   const [vaccines, setVaccines] = useState<Vaccine[]>([]);
   const [showVaccineForm, setShowVaccineForm] = useState(false);
   const [editingVaccineId, setEditingVaccineId] = useState<number | null>(null);
@@ -354,6 +365,8 @@ export default function App() {
         return 'Vacunas';
       case 'LinkTag':
         return 'Vincular tag';
+      case 'LostPetMap':
+        return selectedPet ? `¿Dónde se perdió ${selectedPet.name}?` : 'Ubicación';
       case 'FoundTag':
         return 'Encontré una mascota';
       case 'FoundResult':
@@ -505,12 +518,91 @@ export default function App() {
     setLoading(true);
     try {
       const { error } = await supabase.from('pets').update({ is_lost: isLost }).eq('id', petId);
-      if (error) {
-        Alert.alert('Error', error.message);
-        return;
-      }
+      if (error) { Alert.alert('Error', error.message); return; }
       setSelectedPet((p) => (p ? { ...p, is_lost: isLost } : p));
       await fetchPets();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openLostMap = async () => {
+    if (!selectedPet) return;
+
+    // Si ya tenía ubicación guardada, úsala como punto de partida
+    if (selectedPet.lost_lat && selectedPet.lost_lng) {
+      setLostPin({ lat: selectedPet.lost_lat, lng: selectedPet.lost_lng });
+      setLostRadius(selectedPet.lost_radius_meters ?? 500);
+      setScreen('LostPetMap');
+      return;
+    }
+
+    setLostPin(null);
+    setLostRadius(500);
+    setScreen('LostPetMap');
+
+    // Pedir permiso y animar el mapa una vez que esté montado
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') return;
+
+    setLoading(true);
+    try {
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const coords = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+      setLostPin(coords);
+      // Animar el mapa a la ubicación obtenida
+      setTimeout(() => {
+        mapRef.current?.animateToRegion({
+          latitude: coords.lat,
+          longitude: coords.lng,
+          latitudeDelta: 0.008,
+          longitudeDelta: 0.008,
+        }, 600);
+      }, 300);
+    } catch {
+      Alert.alert('Ubicación no disponible', 'Toca el mapa para marcar dónde se perdió tu mascota.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const centerOnMyLocation = async () => {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') return;
+    setLoading(true);
+    try {
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const coords = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+      setLostPin(coords);
+      mapRef.current?.animateToRegion({
+        latitude: coords.lat,
+        longitude: coords.lng,
+        latitudeDelta: 0.008,
+        longitudeDelta: 0.008,
+      }, 600);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveLostLocation = async () => {
+    if (!selectedPet || !lostPin) {
+      Alert.alert('Ubica a tu mascota', 'Toca el mapa para marcar dónde se perdió.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('pets').update({
+        is_lost: true,
+        lost_lat: lostPin.lat,
+        lost_lng: lostPin.lng,
+        lost_radius_meters: lostRadius,
+      }).eq('id', selectedPet.id);
+      if (error) { Alert.alert('Error', error.message); return; }
+      setSelectedPet((p) => p ? { ...p, is_lost: true, lost_lat: lostPin.lat, lost_lng: lostPin.lng, lost_radius_meters: lostRadius } : p);
+      await fetchPets();
+      Alert.alert('🚨 Alerta publicada', 'Tu mascota está marcada como perdida y los usuarios cercanos podrán verla.');
+      setScreen('PetDetail');
     } finally {
       setLoading(false);
     }
@@ -1338,7 +1430,8 @@ export default function App() {
       case 'PetContact':
       case 'PetVetHistory':
       case 'PetVaccines':
-      case 'LinkTag':       return setScreen('PetDetail');
+      case 'LinkTag':
+      case 'LostPetMap':    return setScreen('PetDetail');
       case 'FoundTag':      return setScreen('Login');
       case 'FoundResult':   return setScreen('FoundTag');
       default: break;
@@ -1728,12 +1821,19 @@ export default function App() {
               <Text style={styles.switchLabel}>🚨  Activar modo perdido</Text>
               <Switch
                 value={selectedPet.is_lost}
-                onValueChange={(v) => updatePetLostStatus(selectedPet.id, v)}
+                onValueChange={(v) => v ? openLostMap() : updatePetLostStatus(selectedPet.id, false)}
                 disabled={loading}
                 trackColor={{ false: C.border, true: C.danger }}
                 thumbColor={C.white}
               />
             </View>
+            {selectedPet.is_lost && (
+              <TouchableOpacity onPress={openLostMap} style={{ marginTop: 8 }}>
+                <Text style={{ color: C.primary, fontWeight: '700', fontSize: 13 }}>
+                  📍 Editar ubicación y radio
+                </Text>
+              </TouchableOpacity>
+            )}
           </Card>
 
           {/* Nav grid 2x2 */}
@@ -2342,6 +2442,100 @@ export default function App() {
       );
     }
 
+    if (screen === 'LostPetMap') {
+      const RADIUS_OPTIONS = [100, 250, 500, 1000, 2000];
+      const defaultRegion = {
+        latitude:      lostPin?.lat ?? -33.4489,
+        longitude:     lostPin?.lng ?? -70.6693,
+        latitudeDelta:  lostPin ? (lostRadius / 50000) * 2 : 0.02,
+        longitudeDelta: lostPin ? (lostRadius / 50000) * 2 : 0.02,
+      };
+
+      return (
+        <View style={styles.form}>
+          {/* Instrucción */}
+          <View style={styles.lostMapTip}>
+            <Text style={styles.lostMapTipText}>
+              {lostPin
+                ? '📍 Arrastra el pin o toca el mapa para mover la ubicación'
+                : '👆 Toca el mapa para marcar dónde se perdió tu mascota'}
+            </Text>
+          </View>
+
+          {/* Mapa */}
+          <View style={styles.lostMapWrap}>
+            <MapView
+              style={{ flex: 1 }}
+              initialRegion={defaultRegion}
+              onPress={(e) => setLostPin({
+                lat: e.nativeEvent.coordinate.latitude,
+                lng: e.nativeEvent.coordinate.longitude,
+              })}
+              showsUserLocation
+              showsMyLocationButton
+            >
+              {lostPin && (
+                <>
+                  <Marker
+                    coordinate={{ latitude: lostPin.lat, longitude: lostPin.lng }}
+                    draggable
+                    onDragEnd={(e) => setLostPin({
+                      lat: e.nativeEvent.coordinate.latitude,
+                      lng: e.nativeEvent.coordinate.longitude,
+                    })}
+                    title={selectedPet?.name ?? 'Mascota'}
+                    description="Arrastra para ajustar"
+                  />
+                  <Circle
+                    center={{ latitude: lostPin.lat, longitude: lostPin.lng }}
+                    radius={lostRadius}
+                    fillColor="rgba(108,71,255,0.12)"
+                    strokeColor="rgba(108,71,255,0.5)"
+                    strokeWidth={2}
+                  />
+                </>
+              )}
+            </MapView>
+          </View>
+
+          {/* Selector de radio */}
+          <View style={styles.card}>
+            <Text style={[styles.cardHeader, { marginBottom: 12 }]}>Radio de búsqueda</Text>
+            <View style={styles.lostRadiusRow}>
+              {RADIUS_OPTIONS.map((r) => (
+                <TouchableOpacity
+                  key={r}
+                  style={[styles.lostRadiusBtn, lostRadius === r && styles.lostRadiusBtnActive]}
+                  onPress={() => setLostRadius(r)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.lostRadiusBtnText, lostRadius === r && styles.lostRadiusBtnTextActive]}>
+                    {r >= 1000 ? `${r / 1000}km` : `${r}m`}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* Botones */}
+          <TouchableOpacity
+            style={[styles.btnPrimary, !lostPin && { opacity: 0.5 }]}
+            onPress={saveLostLocation}
+            disabled={loading || !lostPin}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.btnPrimaryText}>
+              {loading ? 'Publicando...' : '🚨 Publicar alerta de búsqueda'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen('PetDetail')} activeOpacity={0.85}>
+            <Text style={styles.btnGhostText}>Cancelar</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
     return (
       <View style={styles.form}>
         <TextInput
@@ -2721,4 +2915,40 @@ const styles = StyleSheet.create({
   cardSubtitle:{ color: C.textLight, fontSize: 14, marginTop: 2, fontWeight: '500' },
   importantNote: { color: '#92400E', fontWeight: '700', fontSize: 13 },
   detailName:  { fontSize: 24, fontWeight: '800', color: C.dark },
+
+  // ─── Lost Pet Map ──────────────────────────────────────────────────────────
+  lostMapTip: {
+    backgroundColor: C.primaryLight,
+    borderRadius: 14,
+    padding: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: C.primary,
+  },
+  lostMapTipText: { color: C.primaryDark, fontWeight: '600', fontSize: 13, lineHeight: 18 },
+  lostMapWrap: {
+    height: 320,
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: C.dark,
+    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  lostRadiusRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  lostRadiusBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    alignItems: 'center',
+    backgroundColor: C.white,
+  },
+  lostRadiusBtnActive: {
+    backgroundColor: C.primary,
+    borderColor: C.primary,
+  },
+  lostRadiusBtnText: { fontWeight: '700', fontSize: 13, color: C.textLight },
+  lostRadiusBtnTextActive: { color: C.white },
 });
