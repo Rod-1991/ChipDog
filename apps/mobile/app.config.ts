@@ -22,8 +22,8 @@ const config: ExpoConfig = {
     'expo-location'
   ],
   extra: {
-    supabaseUrl: process.env.SUPABASE_URL,
-    supabaseAnonKey: process.env.SUPABASE_ANON_KEY,
+    supabaseUrl: process.env.SUPABASE_URL ?? 'https://kcowhlsfbuixvdjhrikl.supabase.co',
+    supabaseAnonKey: process.env.SUPABASE_ANON_KEY ?? 'sb_publishable_wVtif8m5qtuzbqmB0h3XJQ_mtRJwc_7',
     eas: {
       projectId: 'f824aecc-b54f-49e8-85a7-68feb3e64b25'
     }
