@@ -27,6 +27,19 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import * as Location from 'expo-location';
 import MapView, { Circle, Marker } from 'react-native-maps';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import QRCode from 'react-native-qrcode-svg';
+
+// NFC: carga dinámica — no disponible en Expo Go
+let NfcManager: any = null;
+let NfcTech: any = null;
+let Ndef: any = null;
+try {
+  const nfc = require('react-native-nfc-manager');
+  NfcManager = nfc.default;
+  NfcTech = nfc.NfcTech;
+  Ndef = nfc.Ndef;
+} catch { /* Expo Go o dispositivo sin NFC */ }
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -55,7 +68,8 @@ type Screen =
   | 'LinkTag'
   | 'FoundTag'
   | 'FoundResult'
-  | 'LostPetMap';
+  | 'LostPetMap'
+  | 'ScanTag';
 
 type Pet = {
   id: number;
@@ -403,6 +417,12 @@ export default function App() {
   const [birthDateText, setBirthDateText] = useState('');
 
   const [tagCode, setTagCode] = useState('');
+  const [linkTagCode, setLinkTagCode] = useState('');
+  const [linkTagMode, setLinkTagMode] = useState<'choose' | 'nfc' | 'qr'>('choose');
+  const [nfcStatus, setNfcStatus] = useState<'idle' | 'scanning' | 'success' | 'error'>('idle');
+  const [nfcError, setNfcError] = useState('');
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [qrScanned, setQrScanned] = useState(false);
 
   const [lostPin, setLostPin] = useState<{ lat: number; lng: number } | null>(null);
   const [lostRadius, setLostRadius] = useState(500);
@@ -466,6 +486,7 @@ export default function App() {
       case 'PetVetHistory':return 'Historial Veterinario';
       case 'PetVaccines':  return showVaccineForm ? (editingVaccineId ? 'Editar vacuna' : 'Nueva vacuna') : 'Vacunas';
       case 'LinkTag':      return 'Vincular tag';
+      case 'ScanTag':      return 'Escanear QR';
       case 'LostPetMap':   return selectedPet ? `¿Dónde se perdió ${selectedPet.name}?` : 'Ubicación';
       case 'FoundTag':     return 'Encontré una mascota';
       case 'FoundResult':  return 'Mascota encontrada';
@@ -945,29 +966,22 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleFoundLookup = async () => {
-    const code = foundCode.trim();
-    if (!code) {
-      Alert.alert('Ingresa el código del tag');
-      return;
-    }
-
+  const lookupTagCode = async (code: string) => {
+    if (!code) { Alert.alert('Ingresa el código del tag'); return; }
     setLoading(true);
     const { data, error } = await supabase.rpc('get_pet_public_by_tag', { p_code: code });
     setLoading(false);
-
-    if (error) {
-      Alert.alert('Error', error.message);
-      return;
-    }
-
+    if (error) { Alert.alert('Error', error.message); return; }
     if (!data || data.length === 0) {
       Alert.alert('No encontrado', 'Este tag no está registrado o no tiene una mascota vinculada.');
       return;
     }
-
     setFoundPet(data[0]);
     setScreen('FoundResult');
+  };
+
+  const handleFoundLookup = async () => {
+    await lookupTagCode(foundCode.trim());
   };
 
   const handleLogin = async () => {
@@ -1143,34 +1157,106 @@ export default function App() {
     setScreen('PetList');
   };
 
-  const handleLinkTag = async () => {
-    if (!selectedPet) {
-      Alert.alert('Selecciona una mascota primero');
-      return;
-    }
+  const generateTagCode = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code = 'CD-';
+    for (let i = 0; i < 5; i++) code += chars[Math.floor(Math.random() * chars.length)];
+    return code;
+  };
 
-    const parsed = linkTagSchema.safeParse({ code: tagCode });
-    if (!parsed.success) {
-      Alert.alert('Validación', parsed.error.errors[0]?.message ?? 'Código inválido');
-      return;
-    }
+  const extractCodeFromUrl = (raw: string): string => {
+    const match = raw.match(/\/tag\/([A-Z0-9-]+)/i);
+    return match ? match[1].toUpperCase() : raw.trim().toUpperCase();
+  };
 
+  const saveLinkTagCode = async (code: string) => {
+    if (!selectedPet) { Alert.alert('Error', 'No hay mascota seleccionada.'); return false; }
     setLoading(true);
-    const { error } = await supabase
-      .from('tags')
-      .update({ pet_id: selectedPet.id, status: 'linked' })
-      .eq('code', parsed.data.code)
-      .is('pet_id', null);
-    setLoading(false);
+    try {
+      const { data: existing } = await supabase
+        .from('tags').select('id, pet_id').eq('code', code).maybeSingle();
 
-    if (error) {
-      Alert.alert('Error vinculando tag', error.message);
+      if (!existing) {
+        const { error } = await supabase.from('tags')
+          .insert({ code, pet_id: selectedPet.id, status: 'linked' });
+        if (error) throw error;
+      } else if (!existing.pet_id || existing.pet_id === selectedPet.id) {
+        const { error } = await supabase.from('tags')
+          .update({ pet_id: selectedPet.id, status: 'linked' }).eq('code', code);
+        if (error) throw error;
+      } else {
+        // Vinculado a otra mascota — preguntar
+        await new Promise<void>((resolve) => {
+          Alert.alert(
+            'Tag en uso',
+            `Este tag ya está vinculado a otra mascota. ¿Reasignarlo a ${selectedPet.name}?`,
+            [
+              { text: 'Cancelar', style: 'cancel', onPress: () => resolve() },
+              { text: 'Reasignar', style: 'destructive', onPress: async () => {
+                const { error } = await supabase.from('tags')
+                  .update({ pet_id: selectedPet.id, status: 'linked' }).eq('code', code);
+                if (error) Alert.alert('Error', error.message);
+                else { setScreen('PetDetail'); }
+                resolve();
+              }}
+            ]
+          );
+        });
+        return false;
+      }
+      return true;
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'No se pudo vincular el tag.');
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const writeNfcTag = async () => {
+    if (!NfcManager) {
+      Alert.alert('NFC no disponible', 'Requiere la app instalada desde TestFlight, no Expo Go.');
       return;
     }
+    const url = `https://chipdog.app/tag/${linkTagCode}`;
+    setNfcStatus('scanning');
+    setNfcError('');
+    try {
+      const supported = await NfcManager.isSupported();
+      if (!supported) {
+        setNfcStatus('error');
+        setNfcError('Este dispositivo no tiene chip NFC.');
+        return;
+      }
+      await NfcManager.start();
+      await NfcManager.requestTechnology(NfcTech.Ndef, {
+        alertMessage: 'Acerca el iPhone al tag NFC de ChipDog'
+      });
+      const bytes = Ndef.encodeMessage([Ndef.uriRecord(url)]);
+      await NfcManager.ndefHandler.writeNdefMessage(bytes);
+      await NfcManager.setAlertMessageIOS('Tag grabado ✅');
+      await NfcManager.cancelTechnologyRequest();
+      // Guardar en Supabase
+      const ok = await saveLinkTagCode(linkTagCode);
+      if (ok) setNfcStatus('success');
+    } catch (err: any) {
+      await NfcManager.cancelTechnologyRequest().catch(() => {});
+      const msg = err?.message ?? '';
+      if (msg.toLowerCase().includes('cancel') || msg.toLowerCase().includes('user')) {
+        setNfcStatus('idle');
+      } else {
+        setNfcStatus('error');
+        setNfcError(msg || 'No se pudo escribir el tag NFC.');
+      }
+    }
+  };
 
-    Alert.alert('Tag vinculado');
-    setTagCode('');
-    setScreen('PetDetail');
+  const handleLinkTag = async () => {
+    // Compatibilidad con el flujo manual (TagCode input legacy)
+    const parsed = linkTagSchema.safeParse({ code: tagCode });
+    if (!parsed.success) { Alert.alert('Validación', parsed.error.errors[0]?.message ?? 'Código inválido'); return; }
+    const ok = await saveLinkTagCode(parsed.data.code);
+    if (ok) { setTagCode(''); setScreen('PetDetail'); }
   };
 
   // (Se mantienen por si los usas en FoundResult más adelante)
@@ -1629,6 +1715,16 @@ export default function App() {
     fetchVaccines(selectedPet.id);
   }, [screen, selectedPet?.id]);
 
+  // LinkTag — generar código y resetear estado
+  useEffect(() => {
+    if (screen === 'LinkTag') {
+      setLinkTagCode(generateTagCode());
+      setLinkTagMode('choose');
+      setNfcStatus('idle');
+      setNfcError('');
+    }
+  }, [screen]);
+
   // Reset vaccine form al salir de la pantalla
   useEffect(() => {
     if (screen === 'PetVaccines') return;
@@ -1721,6 +1817,7 @@ export default function App() {
         return setScreen('PetDetail');
       case 'FoundTag':      return setScreen(isLoggedIn ? 'Home' : 'Login');
       case 'FoundResult':   return setScreen('FoundTag');
+      case 'ScanTag':       setQrScanned(false); return setScreen('FoundTag');
       default: break;
     }
   };
@@ -1949,16 +2046,32 @@ export default function App() {
         <View style={styles.foundWrap}>
           <Text style={styles.foundEmoji}>🐕</Text>
           <Text style={styles.foundTitle}>¿Encontraste a alguien?</Text>
-          <Text style={styles.foundSubtitle}>Ingresa el código del tag del collar para ver su información</Text>
+          <Text style={styles.foundSubtitle}>Escanea el QR del collar o ingresa el código manualmente</Text>
+
+          {/* Botón escanear QR */}
+          <TouchableOpacity
+            style={[styles.btnPrimary, { flexDirection: 'row', justifyContent: 'center', gap: 10, paddingVertical: 16, width: '100%' }]}
+            onPress={() => { setQrScanned(false); setScreen('ScanTag'); }} activeOpacity={0.85}>
+            <Text style={{ fontSize: 22 }}>📷</Text>
+            <Text style={[styles.btnPrimaryText, { fontSize: 16 }]}>Escanear QR del collar</Text>
+          </TouchableOpacity>
+
+          {/* Divisor */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, width: '100%', marginVertical: 4 }}>
+            <View style={{ flex: 1, height: 1, backgroundColor: C.border }} />
+            <Text style={{ color: C.textMuted, fontSize: 13, fontWeight: '600' }}>o ingresa el código</Text>
+            <View style={{ flex: 1, height: 1, backgroundColor: C.border }} />
+          </View>
+
           <TextInput
-            style={[styles.input, { marginTop: 8 }]}
-            placeholder="Ej: ABC-1234"
+            style={[styles.input, { width: '100%' }]}
+            placeholder="Ej: CD-A3F9K"
             placeholderTextColor={C.textMuted}
             value={foundCode}
             onChangeText={setFoundCode}
             autoCapitalize="characters"
           />
-          <TouchableOpacity style={styles.btnPrimary} onPress={handleFoundLookup} disabled={loading} activeOpacity={0.85}>
+          <TouchableOpacity style={[styles.btnPrimary, { width: '100%', backgroundColor: C.dark }]} onPress={handleFoundLookup} disabled={loading} activeOpacity={0.85}>
             <Text style={styles.btnPrimaryText}>{loading ? 'Buscando...' : 'Buscar mascota'}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen('Login')} activeOpacity={0.85}>
@@ -2078,7 +2191,10 @@ export default function App() {
         <View style={styles.form}>
           {/* Header */}
           <View style={styles.homeHeader}>
-            <Text style={styles.homeHeaderEyebrow}>🐾  ChipDog</Text>
+            <TouchableOpacity style={styles.inlineBackBtn} onPress={() => setScreen('Home')} activeOpacity={0.7}>
+              <Text style={styles.inlineBackArrow}>‹</Text>
+              <Text style={styles.inlineBackLabel}>Inicio</Text>
+            </TouchableOpacity>
             <Text style={styles.homeHeaderTitle}>Mis Mascotas</Text>
             <Text style={styles.homeHeaderSubtitle}>Todo sobre tu mascota, siempre contigo.</Text>
           </View>
@@ -2406,6 +2522,12 @@ export default function App() {
 
       return (
         <View style={{ gap: 16 }}>
+          {/* Botón atrás */}
+          <TouchableOpacity style={styles.inlineBackBtn} onPress={() => setScreen('PetList')} activeOpacity={0.7}>
+            <Text style={styles.inlineBackArrow}>‹</Text>
+            <Text style={styles.inlineBackLabel}>Mis Mascotas</Text>
+          </TouchableOpacity>
+
           {/* Hero */}
           <View style={styles.petHero}>
             <TouchableOpacity
@@ -3419,22 +3541,192 @@ export default function App() {
       );
     }
 
-    return (
-      <View style={styles.form}>
-        <TextInput
-          style={styles.input}
-          placeholder="Código tag"
-          value={tagCode}
-          onChangeText={setTagCode}
-          autoCapitalize="characters"
-        />
-        <Button title={loading ? 'Vinculando...' : 'Confirmar vínculo'} onPress={handleLinkTag} disabled={loading} />
-        <Button title="Cancelar" onPress={() => setScreen('PetDetail')} />
-      </View>
-    );
+    // ── LinkTag ──
+    if (screen === 'LinkTag') {
+      const tagUrl = `https://chipdog.app/tag/${linkTagCode}`;
+
+      // ── Vista: elegir método ──
+      if (linkTagMode === 'choose') {
+        return (
+          <View style={styles.form}>
+            <Card title="🏷️  Nuevo tag" accent={C.primary}>
+              <Text style={{ color: C.textLight, fontSize: 13, lineHeight: 19 }}>
+                Se generará un código único para {selectedPet?.name ?? 'tu mascota'}. Elige cómo quieres grabarlo en el tag físico.
+              </Text>
+              <View style={{ alignItems: 'center', paddingVertical: 8 }}>
+                <Text style={{ fontSize: 13, color: C.textMuted, fontWeight: '600', marginBottom: 6 }}>CÓDIGO GENERADO</Text>
+                <Text style={{ fontSize: 32, fontWeight: '900', color: C.primary, letterSpacing: 2 }}>{linkTagCode}</Text>
+                <Text style={{ fontSize: 12, color: C.textMuted, marginTop: 4 }}>{tagUrl}</Text>
+              </View>
+            </Card>
+
+            <TouchableOpacity style={[styles.btnPrimary, { flexDirection: 'row', justifyContent: 'center', gap: 10, paddingVertical: 18 }]}
+              onPress={() => setLinkTagMode('nfc')} activeOpacity={0.85}>
+              <Text style={{ fontSize: 24 }}>📡</Text>
+              <View>
+                <Text style={[styles.btnPrimaryText, { fontSize: 17 }]}>Escribir tag NFC</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, textAlign: 'center' }}>Acerca el iPhone al tag</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.btnPrimary, { flexDirection: 'row', justifyContent: 'center', gap: 10, paddingVertical: 18, backgroundColor: C.dark }]}
+              onPress={() => setLinkTagMode('qr')} activeOpacity={0.85}>
+              <Text style={{ fontSize: 24 }}>📱</Text>
+              <View>
+                <Text style={[styles.btnPrimaryText, { fontSize: 17 }]}>Generar código QR</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, textAlign: 'center' }}>Para imprimir o compartir</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        );
+      }
+
+      // ── Vista: NFC ──
+      if (linkTagMode === 'nfc') {
+        return (
+          <View style={styles.form}>
+            <TouchableOpacity style={styles.inlineBackBtn} onPress={() => { setNfcStatus('idle'); setNfcError(''); setLinkTagMode('choose'); }} activeOpacity={0.7}>
+              <Text style={styles.inlineBackArrow}>‹</Text>
+              <Text style={styles.inlineBackLabel}>Cambiar método</Text>
+            </TouchableOpacity>
+
+            <Card title="📡  Escribir tag NFC" accent={C.primary}>
+              <Text style={{ color: C.textMuted, fontSize: 13 }}>Código: <Text style={{ fontWeight: '800', color: C.dark }}>{linkTagCode}</Text></Text>
+
+              {/* Estado visual */}
+              <View style={{ alignItems: 'center', paddingVertical: 24, gap: 12 }}>
+                {nfcStatus === 'idle' && <Text style={{ fontSize: 60 }}>📡</Text>}
+                {nfcStatus === 'scanning' && <Text style={{ fontSize: 60 }}>⏳</Text>}
+                {nfcStatus === 'success' && <Text style={{ fontSize: 60 }}>✅</Text>}
+                {nfcStatus === 'error' && <Text style={{ fontSize: 60 }}>❌</Text>}
+
+                <Text style={{ fontSize: 17, fontWeight: '700', color: C.dark, textAlign: 'center' }}>
+                  {nfcStatus === 'idle' && 'Listo para escribir'}
+                  {nfcStatus === 'scanning' && 'Acerca el iPhone al tag NFC...'}
+                  {nfcStatus === 'success' && '¡Tag grabado correctamente!'}
+                  {nfcStatus === 'error' && 'Error al escribir el tag'}
+                </Text>
+
+                {nfcStatus === 'error' && nfcError ? (
+                  <Text style={{ color: C.danger, fontSize: 13, textAlign: 'center' }}>{nfcError}</Text>
+                ) : null}
+
+                {nfcStatus === 'success' ? (
+                  <Text style={{ color: C.textLight, fontSize: 13, textAlign: 'center' }}>
+                    El tag está vinculado a {selectedPet?.name}
+                  </Text>
+                ) : null}
+              </View>
+
+              {(nfcStatus === 'idle' || nfcStatus === 'error') && (
+                <TouchableOpacity style={styles.btnPrimary} onPress={writeNfcTag} activeOpacity={0.85}>
+                  <Text style={styles.btnPrimaryText}>
+                    {nfcStatus === 'error' ? 'Reintentar' : 'Iniciar sesión NFC'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {nfcStatus === 'success' && (
+                <TouchableOpacity style={styles.btnPrimary} onPress={() => setScreen('PetDetail')} activeOpacity={0.85}>
+                  <Text style={styles.btnPrimaryText}>Volver al perfil</Text>
+                </TouchableOpacity>
+              )}
+            </Card>
+          </View>
+        );
+      }
+
+      // ── Vista: QR ──
+      if (linkTagMode === 'qr') {
+        return (
+          <View style={styles.form}>
+            <TouchableOpacity style={styles.inlineBackBtn} onPress={() => setLinkTagMode('choose')} activeOpacity={0.7}>
+              <Text style={styles.inlineBackArrow}>‹</Text>
+              <Text style={styles.inlineBackLabel}>Cambiar método</Text>
+            </TouchableOpacity>
+
+            <Card title="📱  Código QR" accent={C.dark}>
+              <Text style={{ color: C.textMuted, fontSize: 13 }}>
+                Código: <Text style={{ fontWeight: '800', color: C.dark }}>{linkTagCode}</Text>
+              </Text>
+              <View style={{ alignItems: 'center', paddingVertical: 20, gap: 14 }}>
+                <View style={{ padding: 16, backgroundColor: C.white, borderRadius: 16, shadowColor: '#000', shadowOpacity: 0.08, shadowOffset: { width: 0, height: 2 }, shadowRadius: 8, elevation: 3 }}>
+                  <QRCode value={tagUrl} size={200} color={C.dark} backgroundColor={C.white} />
+                </View>
+                <Text style={{ fontSize: 12, color: C.textMuted, textAlign: 'center', maxWidth: 260 }}>{tagUrl}</Text>
+              </View>
+              <Text style={{ fontSize: 13, color: C.textLight, lineHeight: 19, textAlign: 'center' }}>
+                Toma una captura de pantalla para imprimir este QR o compártelo directamente.{'\n'}Luego toca "Vincular" para guardarlo en el perfil de {selectedPet?.name}.
+              </Text>
+            </Card>
+
+            <TouchableOpacity style={styles.btnPrimary} onPress={async () => {
+              const ok = await saveLinkTagCode(linkTagCode);
+              if (ok) Alert.alert('Tag vinculado ✅', `Código ${linkTagCode} vinculado a ${selectedPet?.name}.`, [
+                { text: 'Volver al perfil', onPress: () => setScreen('PetDetail') }
+              ]);
+            }} disabled={loading} activeOpacity={0.85}>
+              <Text style={styles.btnPrimaryText}>{loading ? 'Vinculando...' : `Vincular QR a ${selectedPet?.name ?? 'mascota'}`}</Text>
+            </TouchableOpacity>
+          </View>
+        );
+      }
+
+      return null;
+    }
+
+    // ── ScanTag (full-screen QR scanner) ──
+    if (screen === 'ScanTag') {
+      if (!cameraPermission?.granted) {
+        return (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16, padding: 32, backgroundColor: C.dark }}>
+            <Text style={{ fontSize: 48 }}>📷</Text>
+            <Text style={{ color: C.white, fontSize: 17, fontWeight: '700', textAlign: 'center' }}>ChipDog necesita acceso a la cámara</Text>
+            <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, textAlign: 'center' }}>Para escanear el QR del tag de la mascota.</Text>
+            <TouchableOpacity style={styles.btnPrimary} onPress={requestCameraPermission} activeOpacity={0.85}>
+              <Text style={styles.btnPrimaryText}>Permitir acceso</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setScreen('FoundTag')} activeOpacity={0.7}>
+              <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14 }}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        );
+      }
+      return (
+        <View style={{ flex: 1, backgroundColor: '#000' }}>
+          <CameraView
+            style={{ flex: 1 }}
+            facing="back"
+            barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+            onBarcodeScanned={qrScanned ? undefined : ({ data }) => {
+              setQrScanned(true);
+              const code = extractCodeFromUrl(data);
+              setFoundCode(code);
+              lookupTagCode(code);
+            }}
+          />
+          {/* Marco guía */}
+          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', pointerEvents: 'none' }}>
+            <View style={{ width: 240, height: 240, borderRadius: 20, borderWidth: 3, borderColor: C.primary, backgroundColor: 'transparent' }} />
+            <Text style={{ color: C.white, marginTop: 20, fontSize: 15, fontWeight: '600', textShadowColor: '#000', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 }}>
+              Apunta al QR del tag
+            </Text>
+          </View>
+          {/* Botón cancelar */}
+          <TouchableOpacity
+            style={{ position: 'absolute', top: 20, left: 20, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 6 }}
+            onPress={() => { setQrScanned(false); setScreen('FoundTag'); }} activeOpacity={0.85}>
+            <Text style={{ color: C.white, fontSize: 20, lineHeight: 24 }}>‹</Text>
+            <Text style={{ color: C.white, fontWeight: '700', fontSize: 14 }}>Cancelar</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return null;
   };
 
-  const isFullScreenMap = screen === 'NearbyMap';
+  const isFullScreenMap = screen === 'NearbyMap' || screen === 'ScanTag';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -3443,18 +3735,28 @@ export default function App() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 6 : 0}
       >
-        {!isFullScreenMap && screen !== 'Home' && screen !== 'PetList' && screen !== 'PetDetail' && screen !== 'Login' && screen !== 'Register' && screen !== 'FoundTag' && screen !== 'FoundResult' ? (
-          (screen === 'PetInfo' || screen === 'PetContact' || (screen === 'PetVetHistory' && vetView === 'detail')) ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
-              <Text style={[styles.title, { flex: 1, padding: 0 }]}>{title}</Text>
+        {canGoBack && screen !== 'Login' && screen !== 'Home' && !isFullScreenMap ? (
+          <View style={styles.navBar}>
+            {/* Botón atrás */}
+            <TouchableOpacity style={styles.navBackBtn} onPress={handleBack} activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Text style={styles.navBackArrow}>‹</Text>
+              <Text style={styles.navBackLabel}>Atrás</Text>
+            </TouchableOpacity>
+
+            {/* Título centrado */}
+            <Text style={styles.navTitle} numberOfLines={1}>{title}</Text>
+
+            {/* Acción derecha (Editar / Cancelar) */}
+            {(screen === 'PetInfo' || screen === 'PetContact' || (screen === 'PetVetHistory' && vetView === 'detail')) ? (
               <TouchableOpacity
+                style={styles.navActionBtn}
                 onPress={() => {
                   if (screen === 'PetVetHistory' && vetView === 'detail') {
                     if (selectedVetRecord) startEditVetRecord(selectedVetRecord);
                     return;
                   }
                   if (isEditingPetDetail) {
-                    // Cancelar — restaurar valores originales desde selectedPet
                     if (selectedPet) {
                       setPetDraft({
                         color: selectedPet.color ?? '',
@@ -3489,18 +3791,27 @@ export default function App() {
                 activeOpacity={0.7}
                 hitSlop={{ top: 8, bottom: 8, left: 12, right: 0 }}
               >
-                <Text style={{ color: C.primary, fontWeight: '700', fontSize: 15 }}>
+                <Text style={{ color: isEditingPetDetail ? C.danger : C.primary, fontWeight: '700', fontSize: 15 }}>
                   {isEditingPetDetail ? 'Cancelar' : 'Editar'}
                 </Text>
               </TouchableOpacity>
-            </View>
-          ) : (
-            <Text style={styles.title}>{title}</Text>
-          )
+            ) : (
+              <View style={styles.navActionBtn} />
+            )}
+          </View>
         ) : null}
 
         {isFullScreenMap ? (
-          renderScreen()
+          <View style={{ flex: 1 }}>
+            {renderScreen()}
+            {/* Botón atrás flotante sobre el mapa */}
+            <TouchableOpacity
+              style={{ position: 'absolute', top: 14, left: 14, flexDirection: 'row', alignItems: 'center', backgroundColor: C.white, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, shadowColor: '#000', shadowOpacity: 0.15, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 4 }}
+              onPress={handleBack} activeOpacity={0.85}>
+              <Text style={{ fontSize: 22, color: C.primary, lineHeight: 26, marginTop: -2 }}>‹</Text>
+              <Text style={{ fontSize: 14, color: C.primary, fontWeight: '700', marginLeft: 4 }}>Inicio</Text>
+            </TouchableOpacity>
+          </View>
         ) : (
           <ScrollView
             contentContainerStyle={styles.scroll}
@@ -3532,6 +3843,17 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
   scroll:    { padding: 16, paddingBottom: 36 },
   title:     { fontSize: 22, fontWeight: '800', color: C.dark, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 },
+
+  // ─── NavBar ────────────────────────────────────────────────────────────────
+  navBar:         { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingTop: 6, paddingBottom: 6, backgroundColor: C.bg, borderBottomWidth: 1, borderBottomColor: C.border },
+  navBackBtn:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 6, minWidth: 70 },
+  navBackArrow:   { fontSize: 28, color: C.primary, lineHeight: 32, marginTop: -2 },
+  navBackLabel:   { fontSize: 15, color: C.primary, fontWeight: '600', marginLeft: 2 },
+  navTitle:       { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '700', color: C.dark },
+  navActionBtn:   { minWidth: 70, alignItems: 'flex-end', paddingHorizontal: 8, paddingVertical: 6 },
+  inlineBackBtn:  { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4, paddingVertical: 4, alignSelf: 'flex-start' },
+  inlineBackArrow:{ fontSize: 26, color: C.primary, lineHeight: 30, marginTop: -1 },
+  inlineBackLabel:{ fontSize: 15, color: C.primary, fontWeight: '600', marginLeft: 2 },
   form:      { gap: 14 },
   loader:    { marginBottom: 24 },
 

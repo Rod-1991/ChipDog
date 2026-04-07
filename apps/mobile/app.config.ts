@@ -11,15 +11,22 @@ const config: ExpoConfig = {
   ios: {
     bundleIdentifier: 'com.chipdog.app',
     supportsTablet: false,
+    entitlements: {
+      'com.apple.developer.nfc.readersession.formats': ['NDEF']
+    },
     infoPlist: {
       UIBackgroundModes: ['remote-notification'],
       NSLocationWhenInUseUsageDescription: 'ChipDog necesita tu ubicación para marcar dónde se perdió tu mascota.',
-      NSLocationAlwaysAndWhenInUseUsageDescription: 'ChipDog necesita tu ubicación para marcar dónde se perdió tu mascota.'
+      NSLocationAlwaysAndWhenInUseUsageDescription: 'ChipDog necesita tu ubicación para marcar dónde se perdió tu mascota.',
+      NSCameraUsageDescription: 'ChipDog usa la cámara para escanear códigos QR de tags de mascotas.',
+      NFCReaderUsageDescription: 'ChipDog usa NFC para vincular y leer tags de mascotas.'
     }
   },
   plugins: [
     'expo-notifications',
-    'expo-location'
+    'expo-location',
+    'expo-camera',
+    ['react-native-nfc-manager', { nfcPermission: 'ChipDog necesita NFC para vincular tags a tu mascota.' }]
   ],
   extra: {
     supabaseUrl: process.env.SUPABASE_URL ?? 'https://kcowhlsfbuixvdjhrikl.supabase.co',
