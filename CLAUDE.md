@@ -127,16 +127,53 @@ Login → Home (dashboard)
 ## Estado actual (Abril 2026)
 - ✅ App funcional en iPhone vía EAS preview build
 - ✅ TestFlight production build subido a App Store Connect (procesando)
-- ✅ Registro de cuenta (email + contraseña) implementado
+- ✅ Registro de cuenta (email + contraseña) con 2 pasos implementado (datos personales: teléfono, RUT, sexo, año nacimiento, comuna)
+- ✅ `user_profiles` tabla creada para guardar datos del perfil del dueño
+- ✅ ScanTag screen — cámara QR para escanear tag desde FoundTag
+- ✅ LostPetList — filtrable por especie (Todos/Perro/Gato) y comuna
+- ✅ LostPetDetail — ficha pública + contacto (llamar / WhatsApp)
+- ✅ Design system actualizado: accentLight, successLight, warningLight, dangerLight agregados al objeto C
 - ⏳ TestFlight link público pendiente de activar
 - ⏳ Datos de prueba en BD a limpiar antes de lanzar (Max, Luna, Simba, Rocky, Nala, Milo)
-- ⏳ Cara marcada como perdida (dato de prueba, desmarcar antes de lanzar)
+- ⏳ Una mascota de prueba marcada como perdida — desmarcar antes de lanzar
 
 ## Pendientes / Ideas
 - Certificado de vacunas exportable (PDF)
 - Deploy web (apps/web) a Vercel
-- Perfil de usuario (nombre, foto)
+- Perfil de usuario (nombre, foto, editar datos)
 - Filtro por radio desde ubicación en LostPetList
+
+---
+
+## Entorno de desarrollo (Mac — desde 2026-04-09)
+Rodrigo migró de Windows a Mac. El entorno Mac parte desde cero.
+
+**Herramientas instaladas (2026-04-09):**
+- ✅ Xcode
+- ✅ Homebrew 5.1.5
+- ✅ Node 24 + npm 11 (vía nvm)
+- ✅ EAS CLI
+- ✅ Dependencias del monorepo (`npm install` en raíz)
+- ✅ `eas login` — cuenta `rod.arriagada`
+- ✅ `npx expo start` funciona — app corre en Expo Go
+
+**Comandos frecuentes:**
+```bash
+# Instalar dependencias del monorepo
+npm install   # desde la raíz
+
+# Iniciar app en desarrollo
+cd apps/mobile && npx expo start
+
+# Build preview (ad hoc, para iPhone registrado)
+cd apps/mobile && eas build --profile preview --platform ios
+
+# Build production (TestFlight)
+cd apps/mobile && eas build --profile production --platform ios
+
+# Submit a App Store Connect
+cd apps/mobile && eas submit --platform ios
+```
 
 ---
 
@@ -146,3 +183,6 @@ Login → Home (dashboard)
 - `MapView.animateToRegion()` con `setTimeout(300ms)` para centrar mapa después de navegación.
 - `NearbyMap` se renderiza fuera del `ScrollView` principal (usa `flex:1` para mapa full-screen).
 - Supabase `DROP FUNCTION IF EXISTS` antes de `CREATE` cuando cambia el tipo de retorno.
+- Componentes `InfoRow` y `Card` definidos FUERA de `App()` para evitar re-mounts al tipear (el teclado no se cierra).
+- Fotos de mascotas: path en Storage es `{user_id}/{pet_id}/main.jpg`, se usan signed URLs (1h).
+- La migración inicial usa schema multi-tenant antiguo. Las migraciones 202602250001 y 202603010001 alinearon la BD con el modelo actual (owner_id directo, sin organization_id en uso).

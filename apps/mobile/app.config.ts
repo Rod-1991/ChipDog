@@ -8,6 +8,12 @@ const config: ExpoConfig = {
   version: '1.0.0',
   orientation: 'portrait',
   userInterfaceStyle: 'light',
+  icon: './assets/icon.png',
+  splash: {
+    image: './assets/icon.png',
+    resizeMode: 'contain',
+    backgroundColor: '#6C47FF',
+  },
   ios: {
     bundleIdentifier: 'com.chipdog.app',
     supportsTablet: false,
