@@ -27,6 +27,19 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import * as Location from 'expo-location';
 import MapView, { Circle, Marker } from 'react-native-maps';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import QRCode from 'react-native-qrcode-svg';
+
+// NFC: carga dinámica — no disponible en Expo Go
+let NfcManager: any = null;
+let NfcTech: any = null;
+let Ndef: any = null;
+try {
+  const nfc = require('react-native-nfc-manager');
+  NfcManager = nfc.default;
+  NfcTech = nfc.NfcTech;
+  Ndef = nfc.Ndef;
+} catch { /* Expo Go o dispositivo sin NFC */ }
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -55,7 +68,20 @@ type Screen =
   | 'LinkTag'
   | 'FoundTag'
   | 'FoundResult'
-  | 'LostPetMap';
+  | 'LostPetMap'
+  | 'ScanTag'
+  | 'Profile';
+
+type UserProfile = {
+  id: string;
+  first_name: string;
+  last_name: string;
+  phone: string;
+  rut: string;
+  sex: string;
+  birth_year: number;
+  commune: string;
+};
 
 type Pet = {
   id: number;
@@ -199,6 +225,14 @@ const C = {
   white:         '#FFFFFF',
 };
 // ─────────────────────────────────────────────────────────────────────────────
+
+const autoFormatDate = (v: string): string => {
+  let clean = v.replace(/[^\d]/g, '');
+  if (clean.length > 2) clean = clean.slice(0, 2) + '/' + clean.slice(2);
+  if (clean.length > 5) clean = clean.slice(0, 5) + '/' + clean.slice(5);
+  if (clean.length > 10) clean = clean.slice(0, 10);
+  return clean;
+};
 
 const normalizeStringOrNull = (v: string) => {
   const t = (v ?? '').trim();
@@ -403,6 +437,12 @@ export default function App() {
   const [birthDateText, setBirthDateText] = useState('');
 
   const [tagCode, setTagCode] = useState('');
+  const [linkTagCode, setLinkTagCode] = useState('');
+  const [linkTagMode, setLinkTagMode] = useState<'choose' | 'nfc' | 'qr'>('choose');
+  const [nfcStatus, setNfcStatus] = useState<'idle' | 'scanning' | 'success' | 'error'>('idle');
+  const [nfcError, setNfcError] = useState('');
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [qrScanned, setQrScanned] = useState(false);
 
   const [lostPin, setLostPin] = useState<{ lat: number; lng: number } | null>(null);
   const [lostRadius, setLostRadius] = useState(500);
@@ -433,6 +473,13 @@ export default function App() {
     batch_number: '',
     notes: ''
   });
+
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [profileDraft, setProfileDraft] = useState<Omit<UserProfile, 'id'>>({
+    first_name: '', last_name: '', phone: '', rut: '', sex: '', birth_year: 0, commune: ''
+  });
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [showProfileSexDropdown, setShowProfileSexDropdown] = useState(false);
 
   const [vetHistory, setVetHistory] = useState<VetRecord[]>([]);
   const [vetView, setVetView] = useState<'list' | 'detail' | 'form'>('list');
@@ -466,7 +513,9 @@ export default function App() {
       case 'PetVetHistory':return 'Historial Veterinario';
       case 'PetVaccines':  return showVaccineForm ? (editingVaccineId ? 'Editar vacuna' : 'Nueva vacuna') : 'Vacunas';
       case 'LinkTag':      return 'Vincular tag';
+      case 'ScanTag':      return 'Escanear QR';
       case 'LostPetMap':   return selectedPet ? `¿Dónde se perdió ${selectedPet.name}?` : 'Ubicación';
+      case 'Profile':      return 'Mi Perfil';
       case 'FoundTag':     return 'Encontré una mascota';
       case 'FoundResult':  return 'Mascota encontrada';
     }
@@ -945,29 +994,22 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleFoundLookup = async () => {
-    const code = foundCode.trim();
-    if (!code) {
-      Alert.alert('Ingresa el código del tag');
-      return;
-    }
-
+  const lookupTagCode = async (code: string) => {
+    if (!code) { Alert.alert('Ingresa el código del tag'); return; }
     setLoading(true);
     const { data, error } = await supabase.rpc('get_pet_public_by_tag', { p_code: code });
     setLoading(false);
-
-    if (error) {
-      Alert.alert('Error', error.message);
-      return;
-    }
-
+    if (error) { Alert.alert('Error', error.message); return; }
     if (!data || data.length === 0) {
       Alert.alert('No encontrado', 'Este tag no está registrado o no tiene una mascota vinculada.');
       return;
     }
-
     setFoundPet(data[0]);
     setScreen('FoundResult');
+  };
+
+  const handleFoundLookup = async () => {
+    await lookupTagCode(foundCode.trim());
   };
 
   const handleLogin = async () => {
@@ -997,6 +1039,63 @@ export default function App() {
     const { data: { user } } = await supabase.auth.getUser();
     const name = user?.user_metadata?.full_name ?? user?.email?.split('@')[0] ?? null;
     setUserName(name);
+  };
+
+  const loadUserProfile = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+    if (!data) return;
+    setUserProfile(data as UserProfile);
+    setProfileDraft({
+      first_name: data.first_name ?? '',
+      last_name: data.last_name ?? '',
+      phone: data.phone ?? '',
+      rut: data.rut ?? '',
+      sex: data.sex ?? '',
+      birth_year: data.birth_year ?? 0,
+      commune: data.commune ?? '',
+    });
+  };
+
+  const saveUserProfile = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    if (!profileDraft.first_name.trim() || !profileDraft.last_name.trim()) {
+      Alert.alert('Validación', 'Nombre y apellido son requeridos.');
+      return;
+    }
+    if (!profileDraft.phone.trim()) {
+      Alert.alert('Validación', 'El teléfono es requerido.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('user_profiles')
+        .update({
+          first_name: profileDraft.first_name.trim(),
+          last_name: profileDraft.last_name.trim(),
+          phone: profileDraft.phone.trim(),
+          rut: profileDraft.rut.trim(),
+          sex: profileDraft.sex,
+          birth_year: profileDraft.birth_year,
+          commune: profileDraft.commune.trim(),
+        })
+        .eq('id', user.id);
+      if (error) { Alert.alert('Error guardando perfil', error.message); return; }
+      await loadUserProfile();
+      // Actualizar nombre en header
+      setUserName(`${profileDraft.first_name.trim()} ${profileDraft.last_name.trim()}`);
+      setIsEditingProfile(false);
+      Alert.alert('Guardado ✅', 'Tu perfil fue actualizado.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const formatRut = (value: string) => {
@@ -1143,34 +1242,110 @@ export default function App() {
     setScreen('PetList');
   };
 
-  const handleLinkTag = async () => {
-    if (!selectedPet) {
-      Alert.alert('Selecciona una mascota primero');
-      return;
-    }
+  const generateTagCode = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code = 'CD-';
+    for (let i = 0; i < 5; i++) code += chars[Math.floor(Math.random() * chars.length)];
+    return code;
+  };
 
-    const parsed = linkTagSchema.safeParse({ code: tagCode });
-    if (!parsed.success) {
-      Alert.alert('Validación', parsed.error.errors[0]?.message ?? 'Código inválido');
-      return;
-    }
+  const extractCodeFromUrl = (raw: string): string => {
+    const match = raw.match(/\/tag\/([A-Z0-9-]+)/i);
+    return match ? match[1].toUpperCase() : raw.trim().toUpperCase();
+  };
 
+  const saveLinkTagCode = async (code: string) => {
+    if (!selectedPet) { Alert.alert('Error', 'No hay mascota seleccionada.'); return false; }
     setLoading(true);
-    const { error } = await supabase
-      .from('tags')
-      .update({ pet_id: selectedPet.id, status: 'linked' })
-      .eq('code', parsed.data.code)
-      .is('pet_id', null);
-    setLoading(false);
+    try {
+      const { data: existing } = await supabase
+        .from('tags').select('id, pet_id').eq('code', code).maybeSingle();
 
-    if (error) {
-      Alert.alert('Error vinculando tag', error.message);
+      if (!existing) {
+        const { error } = await supabase.from('tags')
+          .insert({ code, pet_id: selectedPet.id, status: 'linked' });
+        if (error) throw error;
+      } else if (!existing.pet_id || existing.pet_id === selectedPet.id) {
+        const { error } = await supabase.from('tags')
+          .update({ pet_id: selectedPet.id, status: 'linked' }).eq('code', code);
+        if (error) throw error;
+      } else {
+        // Vinculado a otra mascota — preguntar
+        await new Promise<void>((resolve) => {
+          Alert.alert(
+            'Tag en uso',
+            `Este tag ya está vinculado a otra mascota. ¿Reasignarlo a ${selectedPet.name}?`,
+            [
+              { text: 'Cancelar', style: 'cancel', onPress: () => resolve() },
+              { text: 'Reasignar', style: 'destructive', onPress: async () => {
+                const { error } = await supabase.from('tags')
+                  .update({ pet_id: selectedPet.id, status: 'linked' }).eq('code', code);
+                if (error) Alert.alert('Error', error.message);
+                else { setScreen('PetDetail'); }
+                resolve();
+              }}
+            ]
+          );
+        });
+        return false;
+      }
+      return true;
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'No se pudo vincular el tag.');
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const writeNfcTag = async () => {
+    if (!NfcManager) {
+      Alert.alert('NFC no disponible', 'Requiere la app instalada desde TestFlight, no Expo Go.');
       return;
     }
+    const url = `https://chipdog.app/tag/${linkTagCode}`;
+    setNfcStatus('scanning');
+    setNfcError('');
+    let sessionStarted = false;
+    try {
+      const supported = await NfcManager.isSupported();
+      if (!supported) {
+        setNfcStatus('error');
+        setNfcError('Este dispositivo no tiene chip NFC.');
+        return;
+      }
+      await NfcManager.start();
+      sessionStarted = true;
+      await NfcManager.requestTechnology(NfcTech.Ndef, {
+        alertMessage: 'Acerca el iPhone al tag NFC de ChipDog'
+      });
+      const bytes = Ndef.encodeMessage([Ndef.uriRecord(url)]);
+      await NfcManager.ndefHandler.writeNdefMessage(bytes);
+      await NfcManager.setAlertMessageIOS('Tag grabado ✅');
+      // Guardar en Supabase
+      const ok = await saveLinkTagCode(linkTagCode);
+      if (ok) setNfcStatus('success');
+    } catch (err: any) {
+      const msg = err?.message ?? '';
+      if (msg.toLowerCase().includes('cancel') || msg.toLowerCase().includes('user')) {
+        setNfcStatus('idle');
+      } else {
+        setNfcStatus('error');
+        setNfcError(msg || 'No se pudo escribir el tag NFC.');
+      }
+    } finally {
+      if (sessionStarted) {
+        await NfcManager.cancelTechnologyRequest().catch(() => {});
+      }
+    }
+  };
 
-    Alert.alert('Tag vinculado');
-    setTagCode('');
-    setScreen('PetDetail');
+  const handleLinkTag = async () => {
+    // Compatibilidad con el flujo manual (TagCode input legacy)
+    const parsed = linkTagSchema.safeParse({ code: tagCode });
+    if (!parsed.success) { Alert.alert('Validación', parsed.error.errors[0]?.message ?? 'Código inválido'); return; }
+    const ok = await saveLinkTagCode(parsed.data.code);
+    if (ok) { setTagCode(''); setScreen('PetDetail'); }
   };
 
   // (Se mantienen por si los usas en FoundResult más adelante)
@@ -1523,7 +1698,7 @@ export default function App() {
     setSelectedVetRecord(null);
     setVetView('list');
     resetVetForm();
-  }, [screen]);
+  }, [screen, selectedPet?.id]);
 
   const fetchVaccines = async (petId: number) => {
     const { data, error } = await supabase
@@ -1615,7 +1790,11 @@ export default function App() {
     const parts = v.expiry_date.split('/');
     if (parts.length !== 3) return { label: 'Registrada', color: '#6b7280' };
     const [d, m, y] = parts.map(Number);
-    const expiry = new Date(y < 100 ? 2000 + y : y, m - 1, d);
+    if (!Number.isFinite(d) || !Number.isFinite(m) || !Number.isFinite(y)) return { label: 'Registrada', color: '#6b7280' };
+    // Soporta tanto dd/mm/yy (2 dígitos) como dd/mm/yyyy (4 dígitos)
+    const fullYear = y < 100 ? 2000 + y : y;
+    const expiry = new Date(fullYear, m - 1, d);
+    if (isNaN(expiry.getTime())) return { label: 'Registrada', color: '#6b7280' };
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const diff = (expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
@@ -1629,30 +1808,45 @@ export default function App() {
     fetchVaccines(selectedPet.id);
   }, [screen, selectedPet?.id]);
 
-  // Reset vaccine form al salir de la pantalla
+  // LinkTag — generar código y resetear estado
+  useEffect(() => {
+    if (screen === 'LinkTag') {
+      setLinkTagCode(generateTagCode());
+      setLinkTagMode('choose');
+      setNfcStatus('idle');
+      setNfcError('');
+    }
+  }, [screen]);
+
+  // Reset vaccine form al salir de la pantalla o cambiar de mascota
   useEffect(() => {
     if (screen === 'PetVaccines') return;
     setShowVaccineForm(false);
     setEditingVaccineId(null);
     setVaccineForm({ vaccine_name: '', applied_date: '', expiry_date: '', next_dose_date: '', veterinarian: '', clinic: '', batch_number: '', notes: '' });
-  }, [screen]);
+  }, [screen, selectedPet?.id]);
 
   // Cargar todos los perdidos al llegar al Home (para el banner)
   useEffect(() => {
     if (screen === 'Home') loadAllLostPets();
   }, [screen]);
 
-  // Signed URLs para lista de mascotas perdidas
+  // Cargar perfil al entrar a Profile
+  useEffect(() => {
+    if (screen === 'Profile') loadUserProfile();
+  }, [screen]);
+
+  // Signed URLs para lista de mascotas perdidas (solo las que no están en cache)
   useEffect(() => {
     if (screen !== 'LostPetList') return;
-    const withPhoto = allLostPets.filter(p => p.photo_url);
-    if (!withPhoto.length) return;
+    const pending = allLostPets.filter(p => p.photo_url && !(p.id in lostPetSignedUrls));
+    if (!pending.length) return;
     Promise.all(
-      withPhoto.map(async (p) => {
+      pending.map(async (p) => {
         const { data } = await supabase.storage.from('pet-photos').createSignedUrl(p.photo_url!, 60 * 60);
         return [p.id, data?.signedUrl ?? null] as const;
       })
-    ).then(entries => setLostPetSignedUrls(Object.fromEntries(entries)));
+    ).then(entries => setLostPetSignedUrls(prev => ({ ...prev, ...Object.fromEntries(entries) })));
   }, [screen, allLostPets.length]);
 
   // Signed URL para foto de mascota perdida en detalle
@@ -1719,8 +1913,10 @@ export default function App() {
         }
         if (vetView === 'detail') { setVetView('list'); setSelectedVetRecord(null); return; }
         return setScreen('PetDetail');
+      case 'Profile':       setIsEditingProfile(false); return setScreen('Home');
       case 'FoundTag':      return setScreen(isLoggedIn ? 'Home' : 'Login');
       case 'FoundResult':   return setScreen('FoundTag');
+      case 'ScanTag':       setQrScanned(false); return setScreen('FoundTag');
       default: break;
     }
   };
@@ -1944,21 +2140,153 @@ export default function App() {
       );
     }
 
+    if (screen === 'Profile') {
+      const SEX_OPTIONS = ['Masculino', 'Femenino', 'Prefiero no decir'];
+      return (
+        <View style={styles.form}>
+          {loading ? (
+            <ActivityIndicator color={C.primary} style={{ marginTop: 40 }} />
+          ) : (
+            <>
+              {/* Avatar iniciales */}
+              <View style={styles.profileHero}>
+                <View style={styles.profileAvatarLarge}>
+                  <Text style={styles.profileAvatarLargeText}>
+                    {profileDraft.first_name?.[0]?.toUpperCase() ?? ''}{profileDraft.last_name?.[0]?.toUpperCase() ?? ''}
+                  </Text>
+                </View>
+                {!isEditingProfile && (
+                  <Text style={styles.profileHeroName}>
+                    {profileDraft.first_name} {profileDraft.last_name}
+                  </Text>
+                )}
+                {!isEditingProfile && profileDraft.commune ? (
+                  <Text style={styles.profileHeroMeta}>{profileDraft.commune}</Text>
+                ) : null}
+              </View>
+
+              {isEditingProfile ? (
+                <>
+                  <Card title="Datos personales" accent={C.primary}>
+                    <Text style={styles.fieldLabel}>Nombre</Text>
+                    <TextInput style={styles.input} value={profileDraft.first_name}
+                      onChangeText={(v) => setProfileDraft(p => ({ ...p, first_name: v }))}
+                      placeholder="Nombre" placeholderTextColor={C.textMuted} autoCorrect={false} />
+
+                    <Text style={styles.fieldLabel}>Apellido</Text>
+                    <TextInput style={styles.input} value={profileDraft.last_name}
+                      onChangeText={(v) => setProfileDraft(p => ({ ...p, last_name: v }))}
+                      placeholder="Apellido" placeholderTextColor={C.textMuted} autoCorrect={false} />
+
+                    <Text style={styles.fieldLabel}>Teléfono</Text>
+                    <TextInput style={styles.input} value={profileDraft.phone}
+                      onChangeText={(v) => setProfileDraft(p => ({ ...p, phone: v }))}
+                      placeholder="+56 9 1234 5678" placeholderTextColor={C.textMuted}
+                      keyboardType="phone-pad" />
+
+                    <Text style={styles.fieldLabel}>RUT</Text>
+                    <TextInput style={styles.input} value={profileDraft.rut}
+                      onChangeText={(v) => setProfileDraft(p => ({ ...p, rut: formatRut(v) }))}
+                      placeholder="12.345.678-9" placeholderTextColor={C.textMuted}
+                      autoCapitalize="characters" autoCorrect={false} maxLength={12} />
+
+                    <Text style={styles.fieldLabel}>Sexo</Text>
+                    <TouchableOpacity style={[styles.input, styles.selectInput]}
+                      onPress={() => setShowProfileSexDropdown(v => !v)} activeOpacity={0.9}>
+                      <Text style={[styles.selectInputText, !profileDraft.sex && { color: C.textMuted }]}>
+                        {profileDraft.sex || 'Seleccionar'}
+                      </Text>
+                      <Text style={styles.selectChevron}>{showProfileSexDropdown ? '▲' : '▼'}</Text>
+                    </TouchableOpacity>
+                    {showProfileSexDropdown && (
+                      <View style={styles.selectMenu}>
+                        {SEX_OPTIONS.map(opt => (
+                          <TouchableOpacity key={opt}
+                            style={[styles.selectOption, profileDraft.sex === opt && styles.selectOptionActive]}
+                            onPress={() => { setProfileDraft(p => ({ ...p, sex: opt })); setShowProfileSexDropdown(false); }}>
+                            <Text style={[styles.selectOptionText, profileDraft.sex === opt && styles.selectOptionTextActive]}>{opt}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
+
+                    <Text style={styles.fieldLabel}>Año de nacimiento</Text>
+                    <TextInput style={styles.input} value={profileDraft.birth_year ? String(profileDraft.birth_year) : ''}
+                      onChangeText={(v) => setProfileDraft(p => ({ ...p, birth_year: parseInt(v) || 0 }))}
+                      placeholder="1991" placeholderTextColor={C.textMuted}
+                      keyboardType="number-pad" maxLength={4} />
+
+                    <Text style={styles.fieldLabel}>Comuna</Text>
+                    <TextInput style={styles.input} value={profileDraft.commune}
+                      onChangeText={(v) => setProfileDraft(p => ({ ...p, commune: v }))}
+                      placeholder="Ej: Las Condes" placeholderTextColor={C.textMuted} />
+                  </Card>
+
+                  <TouchableOpacity style={styles.btnPrimary} onPress={saveUserProfile} disabled={loading} activeOpacity={0.85}>
+                    <Text style={styles.btnPrimaryText}>{loading ? 'Guardando...' : 'Guardar cambios'}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={{ alignItems: 'center', paddingVertical: 8 }}
+                    onPress={() => { setIsEditingProfile(false); setShowProfileSexDropdown(false); }} activeOpacity={0.7}>
+                    <Text style={{ color: C.textLight, fontWeight: '600', fontSize: 14 }}>Cancelar</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <Card title="Datos personales" accent={C.primary}>
+                    <InfoRow label="Nombre" value={`${profileDraft.first_name} ${profileDraft.last_name}`} />
+                    <InfoRow label="Teléfono" value={profileDraft.phone} />
+                    <InfoRow label="RUT" value={profileDraft.rut} />
+                    <InfoRow label="Sexo" value={profileDraft.sex} />
+                    <InfoRow label="Año nacimiento" value={profileDraft.birth_year ? String(profileDraft.birth_year) : null} />
+                    <InfoRow label="Comuna" value={profileDraft.commune} />
+                  </Card>
+
+                  <TouchableOpacity style={styles.btnPrimary} onPress={() => setIsEditingProfile(true)} activeOpacity={0.85}>
+                    <Text style={styles.btnPrimaryText}>Editar perfil</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.7}>
+                    <Text style={styles.logoutBtnText}>Cerrar sesión</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </>
+          )}
+        </View>
+      );
+    }
+
     if (screen === 'FoundTag') {
       return (
         <View style={styles.foundWrap}>
           <Text style={styles.foundEmoji}>🐕</Text>
           <Text style={styles.foundTitle}>¿Encontraste a alguien?</Text>
-          <Text style={styles.foundSubtitle}>Ingresa el código del tag del collar para ver su información</Text>
+          <Text style={styles.foundSubtitle}>Escanea el QR del collar o ingresa el código manualmente</Text>
+
+          {/* Botón escanear QR */}
+          <TouchableOpacity
+            style={[styles.btnPrimary, { flexDirection: 'row', justifyContent: 'center', gap: 10, paddingVertical: 16, width: '100%' }]}
+            onPress={() => { setQrScanned(false); setScreen('ScanTag'); }} activeOpacity={0.85}>
+            <Text style={{ fontSize: 22 }}>📷</Text>
+            <Text style={[styles.btnPrimaryText, { fontSize: 16 }]}>Escanear QR del collar</Text>
+          </TouchableOpacity>
+
+          {/* Divisor */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, width: '100%', marginVertical: 4 }}>
+            <View style={{ flex: 1, height: 1, backgroundColor: C.border }} />
+            <Text style={{ color: C.textMuted, fontSize: 13, fontWeight: '600' }}>o ingresa el código</Text>
+            <View style={{ flex: 1, height: 1, backgroundColor: C.border }} />
+          </View>
+
           <TextInput
-            style={[styles.input, { marginTop: 8 }]}
-            placeholder="Ej: ABC-1234"
+            style={[styles.input, { width: '100%' }]}
+            placeholder="Ej: CD-A3F9K"
             placeholderTextColor={C.textMuted}
             value={foundCode}
             onChangeText={setFoundCode}
             autoCapitalize="characters"
           />
-          <TouchableOpacity style={styles.btnPrimary} onPress={handleFoundLookup} disabled={loading} activeOpacity={0.85}>
+          <TouchableOpacity style={[styles.btnPrimary, { width: '100%', backgroundColor: C.dark }]} onPress={handleFoundLookup} disabled={loading} activeOpacity={0.85}>
             <Text style={styles.btnPrimaryText}>{loading ? 'Buscando...' : 'Buscar mascota'}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen('Login')} activeOpacity={0.85}>
@@ -2023,50 +2351,78 @@ export default function App() {
 
     if (screen === 'Home') {
       const lostCount = allLostPets.length;
+      const firstName = userName
+        ? userName.split(' ')[0].charAt(0).toUpperCase() + userName.split(' ')[0].slice(1).toLowerCase()
+        : null;
       return (
         <View style={styles.form}>
-          {/* Header */}
-          <View style={styles.homeHeader}>
-            <Text style={styles.homeHeaderEyebrow}>🐾  ChipDog</Text>
-            <Text style={styles.homeHeaderTitle}>
-              {userName ? `Hola, ${userName.split(' ')[0]} 👋` : 'Hola 👋'}
-            </Text>
-            <Text style={styles.homeHeaderSubtitle}>¿Qué quieres hacer hoy?</Text>
+          {/* Logo + nombre */}
+          <View style={styles.homeLogoRow}>
+            <Image source={require('./assets/icon.png')} style={styles.homeLogoImg} resizeMode="contain" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.homeLogoTitle}>ChipDog</Text>
+              {firstName && <Text style={styles.homeLogoSub}>Hola, {firstName}</Text>}
+            </View>
           </View>
 
-          {/* Alert mascotas perdidas cercanas */}
+          {/* Alerta perdidos */}
           {lostCount > 0 && (
             <TouchableOpacity style={styles.nearbyAlertBanner} onPress={() => setScreen('NearbyMap')} activeOpacity={0.85}>
-              <Text style={styles.nearbyAlertTitle}>🚨 {lostCount} mascota{lostCount > 1 ? 's' : ''} perdida{lostCount > 1 ? 's' : ''} cerca de ti</Text>
-              <Text style={styles.nearbyAlertSub}>Toca para ver el mapa →</Text>
+              <View style={styles.nearbyAlertDot} />
+              <Text style={styles.nearbyAlertTitle}>
+                {lostCount} mascota{lostCount > 1 ? 's' : ''} perdida{lostCount > 1 ? 's' : ''} en tu área
+              </Text>
+              <Text style={styles.nearbyAlertArrow}>›</Text>
             </TouchableOpacity>
           )}
 
-          {/* Grid de acciones */}
-          <TouchableOpacity style={[styles.dashCardFull, { borderTopColor: C.primary }]} onPress={() => setScreen('PetList')} activeOpacity={0.85}>
-            <Text style={styles.dashCardIcon}>🐶</Text>
+          {/* Cards de acciones */}
+          <TouchableOpacity style={styles.dashCard} onPress={() => setScreen('PetList')} activeOpacity={0.85}>
+            <View style={[styles.dashCardIconWrap, { backgroundColor: C.primaryLight }]}>
+              <Text style={styles.dashCardIconEmoji}>🐾</Text>
+            </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.dashCardTitle}>Mis Mascotas</Text>
-              <Text style={styles.dashCardHint}>Perfiles, vacunas e historial vet</Text>
+              <Text style={styles.dashCardHint}>Perfiles, vacunas e historial</Text>
             </View>
-            <Text style={styles.petCardArrow}>›</Text>
+            <Text style={styles.dashCardArrow}>›</Text>
           </TouchableOpacity>
 
-          <View style={styles.dashRow}>
-            <TouchableOpacity style={[styles.dashCardHalf, { borderTopColor: C.accent }]} onPress={() => setScreen('NearbyMap')} activeOpacity={0.85}>
-              <Text style={styles.dashCardIcon}>🗺</Text>
-              <Text style={styles.dashCardTitle}>Mapa</Text>
-              <Text style={styles.dashCardHint}>Perdidos cerca de ti</Text>
-            </TouchableOpacity>
+          <TouchableOpacity style={styles.dashCard} onPress={() => setScreen('NearbyMap')} activeOpacity={0.85}>
+            <View style={[styles.dashCardIconWrap, { backgroundColor: '#FFF1F2' }]}>
+              <Text style={styles.dashCardIconEmoji}>🗺️</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.dashCardTitle}>Mapa de alertas</Text>
+              <Text style={styles.dashCardHint}>Mascotas perdidas cercanas</Text>
+            </View>
+            <Text style={styles.dashCardArrow}>›</Text>
+          </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.dashCardHalf, { borderTopColor: C.success }]} onPress={() => setScreen('FoundTag')} activeOpacity={0.85}>
-              <Text style={styles.dashCardIcon}>🔍</Text>
+          <TouchableOpacity style={styles.dashCard} onPress={() => setScreen('FoundTag')} activeOpacity={0.85}>
+            <View style={[styles.dashCardIconWrap, { backgroundColor: C.successLight }]}>
+              <Text style={styles.dashCardIconEmoji}>🔍</Text>
+            </View>
+            <View style={{ flex: 1 }}>
               <Text style={styles.dashCardTitle}>Escanear tag</Text>
               <Text style={styles.dashCardHint}>Encontré una mascota</Text>
-            </TouchableOpacity>
-          </View>
+            </View>
+            <Text style={styles.dashCardArrow}>›</Text>
+          </TouchableOpacity>
 
-          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.dashCard} onPress={() => setScreen('Profile')} activeOpacity={0.85}>
+            <View style={[styles.dashCardIconWrap, { backgroundColor: C.warningLight }]}>
+              <Text style={styles.dashCardIconEmoji}>👤</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.dashCardTitle}>Mi Perfil</Text>
+              <Text style={styles.dashCardHint}>Datos personales y cuenta</Text>
+            </View>
+            <Text style={styles.dashCardArrow}>›</Text>
+          </TouchableOpacity>
+
+          {/* Cerrar sesión */}
+          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.7}>
             <Text style={styles.logoutBtnText}>Cerrar sesión</Text>
           </TouchableOpacity>
         </View>
@@ -2078,7 +2434,10 @@ export default function App() {
         <View style={styles.form}>
           {/* Header */}
           <View style={styles.homeHeader}>
-            <Text style={styles.homeHeaderEyebrow}>🐾  ChipDog</Text>
+            <TouchableOpacity style={styles.inlineBackBtn} onPress={() => setScreen('Home')} activeOpacity={0.7}>
+              <Text style={styles.inlineBackArrow}>‹</Text>
+              <Text style={styles.inlineBackLabel}>Inicio</Text>
+            </TouchableOpacity>
             <Text style={styles.homeHeaderTitle}>Mis Mascotas</Text>
             <Text style={styles.homeHeaderSubtitle}>Todo sobre tu mascota, siempre contigo.</Text>
           </View>
@@ -2406,6 +2765,12 @@ export default function App() {
 
       return (
         <View style={{ gap: 16 }}>
+          {/* Botón atrás */}
+          <TouchableOpacity style={styles.inlineBackBtn} onPress={() => setScreen('PetList')} activeOpacity={0.7}>
+            <Text style={styles.inlineBackArrow}>‹</Text>
+            <Text style={styles.inlineBackLabel}>Mis Mascotas</Text>
+          </TouchableOpacity>
+
           {/* Hero */}
           <View style={styles.petHero}>
             <TouchableOpacity
@@ -2505,7 +2870,7 @@ export default function App() {
               <TextInput style={styles.input} placeholder="dd/mm/aaaa"
                 placeholderTextColor={C.textMuted}
                 value={vetForm.date}
-                onChangeText={(v) => setVetForm((p) => ({ ...p, date: v }))}
+                onChangeText={(v) => setVetForm((p) => ({ ...p, date: autoFormatDate(v) }))}
                 keyboardType="number-pad" maxLength={10} />
 
               <Text style={styles.fieldLabel}>Motivo de la consulta *</Text>
@@ -2689,7 +3054,7 @@ export default function App() {
               <TextInput style={styles.input} placeholder="dd/mm/aaaa"
                 placeholderTextColor={C.textMuted}
                 value={vaccineForm.applied_date}
-                onChangeText={(v) => setVaccineForm((p) => ({ ...p, applied_date: v }))}
+                onChangeText={(v) => setVaccineForm((p) => ({ ...p, applied_date: autoFormatDate(v) }))}
                 keyboardType="number-pad" maxLength={10} />
             </Card>
 
@@ -2698,14 +3063,14 @@ export default function App() {
               <TextInput style={styles.input} placeholder="dd/mm/aaaa"
                 placeholderTextColor={C.textMuted}
                 value={vaccineForm.expiry_date}
-                onChangeText={(v) => setVaccineForm((p) => ({ ...p, expiry_date: v }))}
+                onChangeText={(v) => setVaccineForm((p) => ({ ...p, expiry_date: autoFormatDate(v) }))}
                 keyboardType="number-pad" maxLength={10} />
 
               <Text style={styles.fieldLabel}>Próxima dosis</Text>
               <TextInput style={styles.input} placeholder="dd/mm/aaaa"
                 placeholderTextColor={C.textMuted}
                 value={vaccineForm.next_dose_date}
-                onChangeText={(v) => setVaccineForm((p) => ({ ...p, next_dose_date: v }))}
+                onChangeText={(v) => setVaccineForm((p) => ({ ...p, next_dose_date: autoFormatDate(v) }))}
                 keyboardType="number-pad" maxLength={10} />
             </Card>
 
@@ -3419,22 +3784,192 @@ export default function App() {
       );
     }
 
-    return (
-      <View style={styles.form}>
-        <TextInput
-          style={styles.input}
-          placeholder="Código tag"
-          value={tagCode}
-          onChangeText={setTagCode}
-          autoCapitalize="characters"
-        />
-        <Button title={loading ? 'Vinculando...' : 'Confirmar vínculo'} onPress={handleLinkTag} disabled={loading} />
-        <Button title="Cancelar" onPress={() => setScreen('PetDetail')} />
-      </View>
-    );
+    // ── LinkTag ──
+    if (screen === 'LinkTag') {
+      const tagUrl = `https://chipdog.app/tag/${linkTagCode}`;
+
+      // ── Vista: elegir método ──
+      if (linkTagMode === 'choose') {
+        return (
+          <View style={styles.form}>
+            <Card title="🏷️  Nuevo tag" accent={C.primary}>
+              <Text style={{ color: C.textLight, fontSize: 13, lineHeight: 19 }}>
+                Se generará un código único para {selectedPet?.name ?? 'tu mascota'}. Elige cómo quieres grabarlo en el tag físico.
+              </Text>
+              <View style={{ alignItems: 'center', paddingVertical: 8 }}>
+                <Text style={{ fontSize: 13, color: C.textMuted, fontWeight: '600', marginBottom: 6 }}>CÓDIGO GENERADO</Text>
+                <Text style={{ fontSize: 32, fontWeight: '900', color: C.primary, letterSpacing: 2 }}>{linkTagCode}</Text>
+                <Text style={{ fontSize: 12, color: C.textMuted, marginTop: 4 }}>{tagUrl}</Text>
+              </View>
+            </Card>
+
+            <TouchableOpacity style={[styles.btnPrimary, { flexDirection: 'row', justifyContent: 'center', gap: 10, paddingVertical: 18 }]}
+              onPress={() => setLinkTagMode('nfc')} activeOpacity={0.85}>
+              <Text style={{ fontSize: 24 }}>📡</Text>
+              <View>
+                <Text style={[styles.btnPrimaryText, { fontSize: 17 }]}>Escribir tag NFC</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, textAlign: 'center' }}>Acerca el iPhone al tag</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.btnPrimary, { flexDirection: 'row', justifyContent: 'center', gap: 10, paddingVertical: 18, backgroundColor: C.dark }]}
+              onPress={() => setLinkTagMode('qr')} activeOpacity={0.85}>
+              <Text style={{ fontSize: 24 }}>📱</Text>
+              <View>
+                <Text style={[styles.btnPrimaryText, { fontSize: 17 }]}>Generar código QR</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, textAlign: 'center' }}>Para imprimir o compartir</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        );
+      }
+
+      // ── Vista: NFC ──
+      if (linkTagMode === 'nfc') {
+        return (
+          <View style={styles.form}>
+            <TouchableOpacity style={styles.inlineBackBtn} onPress={() => { setNfcStatus('idle'); setNfcError(''); setLinkTagMode('choose'); }} activeOpacity={0.7}>
+              <Text style={styles.inlineBackArrow}>‹</Text>
+              <Text style={styles.inlineBackLabel}>Cambiar método</Text>
+            </TouchableOpacity>
+
+            <Card title="📡  Escribir tag NFC" accent={C.primary}>
+              <Text style={{ color: C.textMuted, fontSize: 13 }}>Código: <Text style={{ fontWeight: '800', color: C.dark }}>{linkTagCode}</Text></Text>
+
+              {/* Estado visual */}
+              <View style={{ alignItems: 'center', paddingVertical: 24, gap: 12 }}>
+                {nfcStatus === 'idle' && <Text style={{ fontSize: 60 }}>📡</Text>}
+                {nfcStatus === 'scanning' && <Text style={{ fontSize: 60 }}>⏳</Text>}
+                {nfcStatus === 'success' && <Text style={{ fontSize: 60 }}>✅</Text>}
+                {nfcStatus === 'error' && <Text style={{ fontSize: 60 }}>❌</Text>}
+
+                <Text style={{ fontSize: 17, fontWeight: '700', color: C.dark, textAlign: 'center' }}>
+                  {nfcStatus === 'idle' && 'Listo para escribir'}
+                  {nfcStatus === 'scanning' && 'Acerca el iPhone al tag NFC...'}
+                  {nfcStatus === 'success' && '¡Tag grabado correctamente!'}
+                  {nfcStatus === 'error' && 'Error al escribir el tag'}
+                </Text>
+
+                {nfcStatus === 'error' && nfcError ? (
+                  <Text style={{ color: C.danger, fontSize: 13, textAlign: 'center' }}>{nfcError}</Text>
+                ) : null}
+
+                {nfcStatus === 'success' ? (
+                  <Text style={{ color: C.textLight, fontSize: 13, textAlign: 'center' }}>
+                    El tag está vinculado a {selectedPet?.name}
+                  </Text>
+                ) : null}
+              </View>
+
+              {(nfcStatus === 'idle' || nfcStatus === 'error') && (
+                <TouchableOpacity style={styles.btnPrimary} onPress={writeNfcTag} activeOpacity={0.85}>
+                  <Text style={styles.btnPrimaryText}>
+                    {nfcStatus === 'error' ? 'Reintentar' : 'Iniciar sesión NFC'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {nfcStatus === 'success' && (
+                <TouchableOpacity style={styles.btnPrimary} onPress={() => setScreen('PetDetail')} activeOpacity={0.85}>
+                  <Text style={styles.btnPrimaryText}>Volver al perfil</Text>
+                </TouchableOpacity>
+              )}
+            </Card>
+          </View>
+        );
+      }
+
+      // ── Vista: QR ──
+      if (linkTagMode === 'qr') {
+        return (
+          <View style={styles.form}>
+            <TouchableOpacity style={styles.inlineBackBtn} onPress={() => setLinkTagMode('choose')} activeOpacity={0.7}>
+              <Text style={styles.inlineBackArrow}>‹</Text>
+              <Text style={styles.inlineBackLabel}>Cambiar método</Text>
+            </TouchableOpacity>
+
+            <Card title="📱  Código QR" accent={C.dark}>
+              <Text style={{ color: C.textMuted, fontSize: 13 }}>
+                Código: <Text style={{ fontWeight: '800', color: C.dark }}>{linkTagCode}</Text>
+              </Text>
+              <View style={{ alignItems: 'center', paddingVertical: 20, gap: 14 }}>
+                <View style={{ padding: 16, backgroundColor: C.white, borderRadius: 16, shadowColor: '#000', shadowOpacity: 0.08, shadowOffset: { width: 0, height: 2 }, shadowRadius: 8, elevation: 3 }}>
+                  <QRCode value={tagUrl} size={200} color={C.dark} backgroundColor={C.white} />
+                </View>
+                <Text style={{ fontSize: 12, color: C.textMuted, textAlign: 'center', maxWidth: 260 }}>{tagUrl}</Text>
+              </View>
+              <Text style={{ fontSize: 13, color: C.textLight, lineHeight: 19, textAlign: 'center' }}>
+                Toma una captura de pantalla para imprimir este QR o compártelo directamente.{'\n'}Luego toca "Vincular" para guardarlo en el perfil de {selectedPet?.name}.
+              </Text>
+            </Card>
+
+            <TouchableOpacity style={styles.btnPrimary} onPress={async () => {
+              const ok = await saveLinkTagCode(linkTagCode);
+              if (ok) Alert.alert('Tag vinculado ✅', `Código ${linkTagCode} vinculado a ${selectedPet?.name}.`, [
+                { text: 'Volver al perfil', onPress: () => setScreen('PetDetail') }
+              ]);
+            }} disabled={loading} activeOpacity={0.85}>
+              <Text style={styles.btnPrimaryText}>{loading ? 'Vinculando...' : `Vincular QR a ${selectedPet?.name ?? 'mascota'}`}</Text>
+            </TouchableOpacity>
+          </View>
+        );
+      }
+
+      return null;
+    }
+
+    // ── ScanTag (full-screen QR scanner) ──
+    if (screen === 'ScanTag') {
+      if (!cameraPermission?.granted) {
+        return (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16, padding: 32, backgroundColor: C.dark }}>
+            <Text style={{ fontSize: 48 }}>📷</Text>
+            <Text style={{ color: C.white, fontSize: 17, fontWeight: '700', textAlign: 'center' }}>ChipDog necesita acceso a la cámara</Text>
+            <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, textAlign: 'center' }}>Para escanear el QR del tag de la mascota.</Text>
+            <TouchableOpacity style={styles.btnPrimary} onPress={requestCameraPermission} activeOpacity={0.85}>
+              <Text style={styles.btnPrimaryText}>Permitir acceso</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setScreen('FoundTag')} activeOpacity={0.7}>
+              <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14 }}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        );
+      }
+      return (
+        <View style={{ flex: 1, backgroundColor: '#000' }}>
+          <CameraView
+            style={{ flex: 1 }}
+            facing="back"
+            barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+            onBarcodeScanned={qrScanned ? undefined : ({ data }) => {
+              setQrScanned(true);
+              const code = extractCodeFromUrl(data);
+              setFoundCode(code);
+              lookupTagCode(code);
+            }}
+          />
+          {/* Marco guía */}
+          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', pointerEvents: 'none' }}>
+            <View style={{ width: 240, height: 240, borderRadius: 20, borderWidth: 3, borderColor: C.primary, backgroundColor: 'transparent' }} />
+            <Text style={{ color: C.white, marginTop: 20, fontSize: 15, fontWeight: '600', textShadowColor: '#000', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 }}>
+              Apunta al QR del tag
+            </Text>
+          </View>
+          {/* Botón cancelar */}
+          <TouchableOpacity
+            style={{ position: 'absolute', top: 20, left: 20, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 6 }}
+            onPress={() => { setQrScanned(false); setScreen('FoundTag'); }} activeOpacity={0.85}>
+            <Text style={{ color: C.white, fontSize: 20, lineHeight: 24 }}>‹</Text>
+            <Text style={{ color: C.white, fontWeight: '700', fontSize: 14 }}>Cancelar</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return null;
   };
 
-  const isFullScreenMap = screen === 'NearbyMap';
+  const isFullScreenMap = screen === 'NearbyMap' || screen === 'ScanTag';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -3443,18 +3978,28 @@ export default function App() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 6 : 0}
       >
-        {!isFullScreenMap && screen !== 'Home' && screen !== 'PetList' && screen !== 'PetDetail' && screen !== 'Login' && screen !== 'Register' && screen !== 'FoundTag' && screen !== 'FoundResult' ? (
-          (screen === 'PetInfo' || screen === 'PetContact' || (screen === 'PetVetHistory' && vetView === 'detail')) ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 }}>
-              <Text style={[styles.title, { flex: 1, padding: 0 }]}>{title}</Text>
+        {canGoBack && !isFullScreenMap ? (
+          <View style={styles.navBar}>
+            {/* Botón atrás */}
+            <TouchableOpacity style={styles.navBackBtn} onPress={handleBack} activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Text style={styles.navBackArrow}>‹</Text>
+              <Text style={styles.navBackLabel}>Atrás</Text>
+            </TouchableOpacity>
+
+            {/* Título centrado */}
+            <Text style={styles.navTitle} numberOfLines={1}>{title}</Text>
+
+            {/* Acción derecha (Editar / Cancelar) */}
+            {(screen === 'PetInfo' || screen === 'PetContact' || (screen === 'PetVetHistory' && vetView === 'detail')) ? (
               <TouchableOpacity
+                style={styles.navActionBtn}
                 onPress={() => {
                   if (screen === 'PetVetHistory' && vetView === 'detail') {
                     if (selectedVetRecord) startEditVetRecord(selectedVetRecord);
                     return;
                   }
                   if (isEditingPetDetail) {
-                    // Cancelar — restaurar valores originales desde selectedPet
                     if (selectedPet) {
                       setPetDraft({
                         color: selectedPet.color ?? '',
@@ -3489,18 +4034,27 @@ export default function App() {
                 activeOpacity={0.7}
                 hitSlop={{ top: 8, bottom: 8, left: 12, right: 0 }}
               >
-                <Text style={{ color: C.primary, fontWeight: '700', fontSize: 15 }}>
+                <Text style={{ color: isEditingPetDetail ? C.danger : C.primary, fontWeight: '700', fontSize: 15 }}>
                   {isEditingPetDetail ? 'Cancelar' : 'Editar'}
                 </Text>
               </TouchableOpacity>
-            </View>
-          ) : (
-            <Text style={styles.title}>{title}</Text>
-          )
+            ) : (
+              <View style={styles.navActionBtn} />
+            )}
+          </View>
         ) : null}
 
         {isFullScreenMap ? (
-          renderScreen()
+          <View style={{ flex: 1 }}>
+            {renderScreen()}
+            {/* Botón atrás flotante sobre el mapa */}
+            <TouchableOpacity
+              style={{ position: 'absolute', top: 14, left: 14, flexDirection: 'row', alignItems: 'center', backgroundColor: C.white, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, shadowColor: '#000', shadowOpacity: 0.15, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 4 }}
+              onPress={handleBack} activeOpacity={0.85}>
+              <Text style={{ fontSize: 22, color: C.primary, lineHeight: 26, marginTop: -2 }}>‹</Text>
+              <Text style={{ fontSize: 14, color: C.primary, fontWeight: '700', marginLeft: 4 }}>Inicio</Text>
+            </TouchableOpacity>
+          </View>
         ) : (
           <ScrollView
             contentContainerStyle={styles.scroll}
@@ -3532,6 +4086,17 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
   scroll:    { padding: 16, paddingBottom: 36 },
   title:     { fontSize: 22, fontWeight: '800', color: C.dark, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 },
+
+  // ─── NavBar ────────────────────────────────────────────────────────────────
+  navBar:         { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingTop: 6, paddingBottom: 6, backgroundColor: C.bg, borderBottomWidth: 1, borderBottomColor: C.border },
+  navBackBtn:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 6, minWidth: 70 },
+  navBackArrow:   { fontSize: 28, color: C.primary, lineHeight: 32, marginTop: -2 },
+  navBackLabel:   { fontSize: 15, color: C.primary, fontWeight: '600', marginLeft: 2 },
+  navTitle:       { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '700', color: C.dark },
+  navActionBtn:   { minWidth: 70, alignItems: 'flex-end', paddingHorizontal: 8, paddingVertical: 6 },
+  inlineBackBtn:  { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4, paddingVertical: 4, alignSelf: 'flex-start' },
+  inlineBackArrow:{ fontSize: 26, color: C.primary, lineHeight: 30, marginTop: -1 },
+  inlineBackLabel:{ fontSize: 15, color: C.primary, fontWeight: '600', marginLeft: 2 },
   form:      { gap: 14 },
   loader:    { marginBottom: 24 },
 
@@ -3839,6 +4404,38 @@ const styles = StyleSheet.create({
   calendarInlineBtn:     { paddingVertical: 11, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.white },
   calendarInlineBtnText: { color: C.dark, fontWeight: '700' },
 
+  // ─── Mi Perfil ─────────────────────────────────────────────────────────────
+  profileHero: {
+    alignItems: 'center',
+    paddingVertical: 16,
+    gap: 6,
+  },
+  profileAvatarLarge: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: C.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  profileAvatarLargeText: {
+    fontSize: 30,
+    fontWeight: '800',
+    color: C.primary,
+  },
+  profileHeroName: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: C.dark,
+    letterSpacing: -0.3,
+  },
+  profileHeroMeta: {
+    fontSize: 13,
+    color: C.textLight,
+    fontWeight: '500',
+  },
+
   // ─── Profile (legacy, still used in some places) ───────────────────────────
   homePetImageWrap: { width: 72, height: 72, borderRadius: 999, overflow: 'hidden', backgroundColor: C.surface },
   homePetImage:     { width: 72, height: 72, borderRadius: 999 },
@@ -3945,16 +4542,120 @@ const styles = StyleSheet.create({
   lostRadiusBtnTextActive: { color: C.white },
 
   // ─── Dashboard Home ────────────────────────────────────────────────────────
+  homeTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+    paddingBottom: 8,
+  },
+  homeTopBarLogo: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: C.primary,
+    letterSpacing: -0.5,
+  },
+  homeAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: C.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  homeAvatarText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: C.primary,
+  },
+  homeGreeting: {
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    gap: 4,
+  },
+  homeGreetingName: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: C.dark,
+    letterSpacing: -0.5,
+  },
+  homeGreetingMeta: {
+    fontSize: 14,
+    color: C.textLight,
+    fontWeight: '500',
+  },
+  homeLogoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingBottom: 8,
+  },
+  homeLogoImg: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+  },
+  homeLogoTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: C.dark,
+    letterSpacing: -0.5,
+  },
+  homeLogoSub: {
+    fontSize: 13,
+    color: C.textLight,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  dashCardIconWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dashCardIconEmoji: {
+    fontSize: 22,
+  },
   nearbyAlertBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#FEF3C7',
-    borderRadius: 16,
+    borderRadius: 12,
     padding: 14,
     borderLeftWidth: 4,
     borderLeftColor: C.warning,
     gap: 4,
   },
-  nearbyAlertTitle: { color: '#92400E', fontWeight: '800', fontSize: 14 },
-  nearbyAlertSub:   { color: '#B45309', fontWeight: '600', fontSize: 12 },
+  nearbyAlertDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: C.warning,
+    marginRight: 6,
+  },
+  nearbyAlertTitle: { flex: 1, color: '#92400E', fontWeight: '700', fontSize: 13 },
+  nearbyAlertArrow: { color: '#B45309', fontWeight: '800', fontSize: 18 },
+
+  dashCard: {
+    backgroundColor: C.white,
+    borderRadius: 16,
+    padding: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  dashCardAccent: {
+    width: 4,
+    height: 36,
+    borderRadius: 2,
+  },
+  dashCardArrow: { fontSize: 22, color: C.textMuted, fontWeight: '300' },
 
   dashRow: { flexDirection: 'row', gap: 12 },
 
