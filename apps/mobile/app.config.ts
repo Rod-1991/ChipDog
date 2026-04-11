@@ -32,7 +32,7 @@ const config: ExpoConfig = {
     'expo-notifications',
     'expo-location',
     'expo-camera',
-    ['react-native-nfc-manager', { nfcPermission: 'ChipDog necesita NFC para vincular tags a tu mascota.' }]
+    ['react-native-nfc-manager', { nfcPermission: 'ChipDog necesita NFC para vincular tags a tu mascota.', includeNdefEntitlement: false }]
   ],
   extra: {
     supabaseUrl: process.env.SUPABASE_URL ?? 'https://kcowhlsfbuixvdjhrikl.supabase.co',
