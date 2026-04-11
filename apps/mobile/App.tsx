@@ -989,6 +989,8 @@ export default function App() {
         }
 
         if (data.session) {
+          setUserId(data.session.user.id);
+          setIsLoggedIn(true);
           await fetchPets();
           if (!mounted) return;
           setScreen('Home');
@@ -1006,10 +1008,12 @@ export default function App() {
       if (!mounted) return;
 
       if (session) {
+        setUserId(session.user.id);
         await fetchPets();
         if (!mounted) return;
         setScreen('Home');
       } else {
+        setUserId(null);
         setPets([]);
         setSelectedPet(null);
         setPetPhotoSignedUrl(null);
@@ -1042,6 +1046,43 @@ export default function App() {
     await lookupTagCode(foundCode.trim());
   };
 
+  const readNfcTagForFound = async () => {
+    if (!NfcManager) {
+      Alert.alert('NFC no disponible', 'Requiere la app instalada desde TestFlight, no Expo Go.');
+      return;
+    }
+    let sessionStarted = false;
+    try {
+      const supported = await NfcManager.isSupported();
+      if (!supported) { Alert.alert('Sin NFC', 'Este dispositivo no tiene chip NFC.'); return; }
+      await NfcManager.start();
+      sessionStarted = true;
+      await NfcManager.requestTechnology(NfcTech.Ndef, {
+        alertMessage: 'Acerca el iPhone al tag NFC del collar'
+      });
+      const tag = await NfcManager.getTag();
+      const ndefRecords = tag?.ndefMessage ?? [];
+      let raw = '';
+      for (const record of ndefRecords) {
+        if (record.payload) {
+          const payload = new Uint8Array(record.payload);
+          // Los tags de ChipDog se graban como URI records
+          raw = Ndef.uri?.decodePayload
+            ? Ndef.uri.decodePayload(payload)
+            : String.fromCharCode(...payload.slice(1));
+          if (raw) break;
+        }
+      }
+      const code = extractCodeFromUrl(raw);
+      if (!code) { Alert.alert('Tag sin código', 'No se pudo leer el código del tag.'); return; }
+      await lookupTagCode(code);
+    } catch (e: any) {
+      if (e?.message !== 'cancelled') Alert.alert('Error NFC', e?.message ?? 'No se pudo leer el tag.');
+    } finally {
+      if (sessionStarted) await NfcManager.cancelTechnologyRequest().catch(() => {});
+    }
+  };
+
   const handleLogin = async () => {
     const parsed = loginSchema.safeParse({ email, password });
     if (!parsed.success) {
@@ -1050,7 +1091,7 @@ export default function App() {
     }
 
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword(parsed.data);
+    const { error } = await supabase.auth.signInWithPassword(parsed.data as { email: string; password: string });
     setLoading(false);
 
     if (error) {
@@ -2516,11 +2557,19 @@ export default function App() {
         <View style={styles.foundWrap}>
           <Text style={styles.foundEmoji}>🐕</Text>
           <Text style={styles.foundTitle}>¿Encontraste a alguien?</Text>
-          <Text style={styles.foundSubtitle}>Escanea el QR del collar o ingresa el código manualmente</Text>
+          <Text style={styles.foundSubtitle}>Escanea el tag NFC, el QR del collar o ingresa el código</Text>
+
+          {/* Botón NFC */}
+          <TouchableOpacity
+            style={[styles.btnPrimary, { flexDirection: 'row', justifyContent: 'center', gap: 10, paddingVertical: 16, width: '100%' }]}
+            onPress={readNfcTagForFound} activeOpacity={0.85}>
+            <Text style={{ fontSize: 22 }}>📡</Text>
+            <Text style={[styles.btnPrimaryText, { fontSize: 16 }]}>Acercar al tag NFC</Text>
+          </TouchableOpacity>
 
           {/* Botón escanear QR */}
           <TouchableOpacity
-            style={[styles.btnPrimary, { flexDirection: 'row', justifyContent: 'center', gap: 10, paddingVertical: 16, width: '100%' }]}
+            style={[styles.btnPrimary, { flexDirection: 'row', justifyContent: 'center', gap: 10, paddingVertical: 16, width: '100%', backgroundColor: C.dark }]}
             onPress={() => { setQrScanned(false); setScreen('ScanTag'); }} activeOpacity={0.85}>
             <Text style={{ fontSize: 22 }}>📷</Text>
             <Text style={[styles.btnPrimaryText, { fontSize: 16 }]}>Escanear QR del collar</Text>
@@ -2544,7 +2593,7 @@ export default function App() {
           <TouchableOpacity style={[styles.btnPrimary, { width: '100%', backgroundColor: C.dark }]} onPress={handleFoundLookup} disabled={loading} activeOpacity={0.85}>
             <Text style={styles.btnPrimaryText}>{loading ? 'Buscando...' : 'Buscar mascota'}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen('Login')} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen(isLoggedIn ? 'Home' : 'Login')} activeOpacity={0.85}>
             <Text style={styles.btnGhostText}>Volver</Text>
           </TouchableOpacity>
         </View>
@@ -2597,7 +2646,7 @@ export default function App() {
           <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen('FoundTag')} activeOpacity={0.85}>
             <Text style={styles.btnGhostText}>Buscar otro tag</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen('Login')} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen(isLoggedIn ? 'Home' : 'Login')} activeOpacity={0.85}>
             <Text style={styles.btnGhostText}>Volver al inicio</Text>
           </TouchableOpacity>
         </View>
@@ -3113,7 +3162,7 @@ export default function App() {
             <Text style={styles.btnPrimaryText}>🏷️  Vincular tag NFC / QR</Text>
           </TouchableOpacity>
 
-          {selectedPet?.owner_id === userId && (
+          {(!selectedPet?.owner_id || !userId || selectedPet.owner_id === userId) && (
             <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: C.dark }]} onPress={() => setScreen('PetMembers')} activeOpacity={0.85}>
               <Text style={styles.btnPrimaryText}>👥  Co-dueños</Text>
             </TouchableOpacity>
