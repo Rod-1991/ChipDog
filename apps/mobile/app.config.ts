@@ -17,9 +17,6 @@ const config: ExpoConfig = {
   ios: {
     bundleIdentifier: 'com.chipdog.app',
     supportsTablet: false,
-    entitlements: {
-      'com.apple.developer.nfc.readersession.formats': ['NDEF']
-    },
     infoPlist: {
       UIBackgroundModes: ['remote-notification'],
       NSLocationWhenInUseUsageDescription: 'ChipDog necesita tu ubicación para marcar dónde se perdió tu mascota.',
