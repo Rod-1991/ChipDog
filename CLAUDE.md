@@ -127,20 +127,29 @@ Login → Home (dashboard)
 ## Estado actual (Abril 2026)
 - ✅ App funcional en iPhone vía EAS preview build
 - ✅ TestFlight production build subido a App Store Connect (procesando)
-- ✅ Registro de cuenta (email + contraseña) con 2 pasos implementado (datos personales: teléfono, RUT, sexo, año nacimiento, comuna)
+- ✅ Registro de cuenta (email + contraseña) con 2 pasos implementado
 - ✅ `user_profiles` tabla creada para guardar datos del perfil del dueño
 - ✅ ScanTag screen — cámara QR para escanear tag desde FoundTag
-- ✅ LostPetList — filtrable por especie (Todos/Perro/Gato) y comuna
+- ✅ LostPetList — filtrable por especie y comuna
 - ✅ LostPetDetail — ficha pública + contacto (llamar / WhatsApp)
-- ✅ Design system actualizado: accentLight, successLight, warningLight, dangerLight agregados al objeto C
+- ✅ Home rediseñado — logo, cards con íconos, sin emojis sueltos, cerrar sesión discreto
+- ✅ Mi Perfil — pantalla completa con vista y edición (nombre, teléfono, RUT, sexo, año, comuna)
+- ✅ BD: política INSERT en tags corregida (vinculación de tags fallaba)
+- ✅ BD: `get_nearby_lost_pets` ahora retorna todos los campos que usa LostPetDetail
+- ✅ Bug fechas vacunas corregido (parser soporta dd/mm/yy y dd/mm/yyyy)
+- ✅ Auto-formato de fechas en formularios (dd/mm/aaaa se inserta solo al escribir)
+- ✅ Draft de vacunas y historial vet se resetea al cambiar de mascota
+- ✅ Signed URLs de mascotas perdidas usan cache (no se regeneran en cada visita)
+- ✅ NFC cleanup en finally (lector NFC siempre queda limpio)
 - ⏳ TestFlight link público pendiente de activar
 - ⏳ Datos de prueba en BD a limpiar antes de lanzar (Max, Luna, Simba, Rocky, Nala, Milo)
 - ⏳ Una mascota de prueba marcada como perdida — desmarcar antes de lanzar
 
 ## Pendientes / Ideas
+- Co-propiedad de mascotas (branch separada: `pet_members` table, invitación por email) — diseñado, pendiente de implementar
 - Certificado de vacunas exportable (PDF)
 - Deploy web (apps/web) a Vercel
-- Perfil de usuario (nombre, foto, editar datos)
+- Foto de perfil de usuario
 - Filtro por radio desde ubicación en LostPetList
 
 ---

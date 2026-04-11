@@ -70,7 +70,30 @@ type Screen =
   | 'FoundResult'
   | 'LostPetMap'
   | 'ScanTag'
-  | 'Profile';
+  | 'Profile'
+  | 'InviteCoOwner'
+  | 'PetMembers';
+
+type PetMemberInvitation = {
+  id: number;
+  pet_id: number;
+  pet_name: string;
+  pet_species: string;
+  pet_photo_url: string | null;
+  invited_by_name: string;
+  invited_email: string;
+  created_at: string;
+};
+
+type PetMember = {
+  id: number;
+  pet_id: number;
+  user_id: string | null;
+  role: 'owner' | 'co_owner';
+  status: 'pending' | 'accepted' | 'rejected';
+  invited_email: string;
+  invited_by: string;
+};
 
 type UserProfile = {
   id: string;
@@ -85,6 +108,7 @@ type UserProfile = {
 
 type Pet = {
   id: number;
+  owner_id?: string;
   name: string;
   species: string;
   breed: string | null;
@@ -449,6 +473,7 @@ export default function App() {
   const mapRef = useRef<MapView>(null);
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
   const [userName, setUserName] = useState<string | null>(null);
   const [nearbyLostPets, setNearbyLostPets] = useState<NearbyLostPet[]>([]);
   const [allLostPets, setAllLostPets] = useState<LostPetPin[]>([]);
@@ -473,6 +498,10 @@ export default function App() {
     batch_number: '',
     notes: ''
   });
+
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [petMembers, setPetMembers] = useState<PetMember[]>([]);
+  const [pendingInvitations, setPendingInvitations] = useState<PetMemberInvitation[]>([]);
 
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [profileDraft, setProfileDraft] = useState<Omit<UserProfile, 'id'>>({
@@ -515,7 +544,9 @@ export default function App() {
       case 'LinkTag':      return 'Vincular tag';
       case 'ScanTag':      return 'Escanear QR';
       case 'LostPetMap':   return selectedPet ? `¿Dónde se perdió ${selectedPet.name}?` : 'Ubicación';
-      case 'Profile':      return 'Mi Perfil';
+      case 'Profile':       return 'Mi Perfil';
+      case 'PetMembers':    return selectedPet ? `Co-dueños de ${selectedPet.name}` : 'Co-dueños';
+      case 'InviteCoOwner': return 'Invitar co-dueño';
       case 'FoundTag':     return 'Encontré una mascota';
       case 'FoundResult':  return 'Mascota encontrada';
     }
@@ -530,8 +561,7 @@ export default function App() {
 
     const { data, error } = await supabase
       .from('pets')
-      .select('id,name,species,breed,is_lost,photo_url')
-      .eq('owner_id', user.id)
+      .select('id,owner_id,name,species,breed,is_lost,photo_url')
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -1039,6 +1069,95 @@ export default function App() {
     const { data: { user } } = await supabase.auth.getUser();
     const name = user?.user_metadata?.full_name ?? user?.email?.split('@')[0] ?? null;
     setUserName(name);
+    setUserId(user?.id ?? null);
+  };
+
+  const loadPetMembers = async (petId: number) => {
+    const { data } = await supabase
+      .from('pet_members')
+      .select('*')
+      .eq('pet_id', petId)
+      .order('created_at', { ascending: true });
+    setPetMembers((data as PetMember[]) ?? []);
+  };
+
+  const loadPendingInvitations = async () => {
+    const { data } = await supabase.rpc('get_my_pending_invitations');
+    setPendingInvitations((data as PetMemberInvitation[]) ?? []);
+  };
+
+  const sendCoOwnerInvite = async () => {
+    if (!selectedPet) return;
+    const email = inviteEmail.trim().toLowerCase();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      Alert.alert('Email inválido', 'Ingresa un email válido.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${supabaseUrl}/functions/v1/invite-coowner`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ pet_id: selectedPet.id, invited_email: email }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        Alert.alert('Error', json.error ?? 'No se pudo enviar la invitación.');
+        return;
+      }
+      setInviteEmail('');
+      await loadPetMembers(selectedPet.id);
+      const msg = json.has_account
+        ? `Se envió la invitación a ${email}. Recibirá una notificación en la app.`
+        : `Se envió un email a ${email} para que descargue ChipDog y acepte la invitación.`;
+      Alert.alert('Invitación enviada ✅', msg, [
+        { text: 'Volver', onPress: () => setScreen('PetMembers') }
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const respondInvitation = async (memberId: number, accept: boolean) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('pet_members')
+        .update({ status: accept ? 'accepted' : 'rejected', user_id: user.id, updated_at: new Date().toISOString() })
+        .eq('id', memberId);
+      if (error) { Alert.alert('Error', error.message); return; }
+      await loadPendingInvitations();
+      if (accept) {
+        await fetchPets();
+        Alert.alert('¡Bienvenido!', 'Ahora eres co-dueño de esta mascota. Aparecerá en tu lista.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const removeCoOwner = async (memberId: number) => {
+    Alert.alert('Eliminar co-dueño', '¿Estás seguro?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar', style: 'destructive', onPress: async () => {
+          setLoading(true);
+          try {
+            const { error } = await supabase.from('pet_members').delete().eq('id', memberId);
+            if (error) { Alert.alert('Error', error.message); return; }
+            if (selectedPet) await loadPetMembers(selectedPet.id);
+          } finally {
+            setLoading(false);
+          }
+        }
+      }
+    ]);
   };
 
   const loadUserProfile = async () => {
@@ -1077,7 +1196,8 @@ export default function App() {
     try {
       const { error } = await supabase
         .from('user_profiles')
-        .update({
+        .upsert({
+          id: user.id,
           first_name: profileDraft.first_name.trim(),
           last_name: profileDraft.last_name.trim(),
           phone: profileDraft.phone.trim(),
@@ -1085,8 +1205,7 @@ export default function App() {
           sex: profileDraft.sex,
           birth_year: profileDraft.birth_year,
           commune: profileDraft.commune.trim(),
-        })
-        .eq('id', user.id);
+        }, { onConflict: 'id' });
       if (error) { Alert.alert('Error guardando perfil', error.message); return; }
       await loadUserProfile();
       // Actualizar nombre en header
@@ -1828,13 +1947,25 @@ export default function App() {
 
   // Cargar todos los perdidos al llegar al Home (para el banner)
   useEffect(() => {
-    if (screen === 'Home') loadAllLostPets();
+    if (screen === 'Home') {
+      loadAllLostPets();
+      loadPendingInvitations();
+      loadUserProfile();
+    }
   }, [screen]);
 
   // Cargar perfil al entrar a Profile
   useEffect(() => {
-    if (screen === 'Profile') loadUserProfile();
+    if (screen === 'Profile') {
+      loadUserProfile();
+      loadPendingInvitations();
+    }
   }, [screen]);
+
+  // Cargar miembros al entrar a PetMembers
+  useEffect(() => {
+    if (screen === 'PetMembers' && selectedPet) loadPetMembers(selectedPet.id);
+  }, [screen, selectedPet?.id]);
 
   // Signed URLs para lista de mascotas perdidas (solo las que no están en cache)
   useEffect(() => {
@@ -1914,6 +2045,8 @@ export default function App() {
         if (vetView === 'detail') { setVetView('list'); setSelectedVetRecord(null); return; }
         return setScreen('PetDetail');
       case 'Profile':       setIsEditingProfile(false); return setScreen('Home');
+      case 'InviteCoOwner': setInviteEmail(''); return setScreen('PetMembers');
+      case 'PetMembers':    return setScreen('PetDetail');
       case 'FoundTag':      return setScreen(isLoggedIn ? 'Home' : 'Login');
       case 'FoundResult':   return setScreen('FoundTag');
       case 'ScanTag':       setQrScanned(false); return setScreen('FoundTag');
@@ -2241,6 +2374,42 @@ export default function App() {
                     <InfoRow label="Comuna" value={profileDraft.commune} />
                   </Card>
 
+                  {pendingInvitations.length > 0 && (
+                    <Card title={`Invitaciones (${pendingInvitations.length})`} accent={C.warning}>
+                      {pendingInvitations.map(inv => (
+                        <View key={inv.id} style={{ marginBottom: 14 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                            <View style={[styles.dashCardIconWrap, { backgroundColor: C.warningLight }]}>
+                              <Text style={{ fontSize: 18 }}>{inv.pet_species === 'Gato' ? '🐱' : '🐶'}</Text>
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ color: C.text, fontWeight: '700', fontSize: 14 }}>{inv.pet_name}</Text>
+                              <Text style={{ color: C.textMuted, fontSize: 12 }}>
+                                Invitación de {inv.invited_by_name || inv.invited_email}
+                              </Text>
+                            </View>
+                          </View>
+                          <View style={{ flexDirection: 'row', gap: 10 }}>
+                            <TouchableOpacity
+                              style={[styles.btnPrimary, { flex: 1, paddingVertical: 10 }]}
+                              onPress={() => respondInvitation(inv.id, true)}
+                              disabled={loading}
+                              activeOpacity={0.85}>
+                              <Text style={styles.btnPrimaryText}>Aceptar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.btnGhost, { flex: 1, paddingVertical: 10 }]}
+                              onPress={() => respondInvitation(inv.id, false)}
+                              disabled={loading}
+                              activeOpacity={0.7}>
+                              <Text style={styles.btnGhostText}>Rechazar</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      ))}
+                    </Card>
+                  )}
+
                   <TouchableOpacity style={styles.btnPrimary} onPress={() => setIsEditingProfile(true)} activeOpacity={0.85}>
                     <Text style={styles.btnPrimaryText}>Editar perfil</Text>
                   </TouchableOpacity>
@@ -2252,6 +2421,92 @@ export default function App() {
               )}
             </>
           )}
+        </View>
+      );
+    }
+
+    if (screen === 'PetMembers') {
+      const accepted = petMembers.filter(m => m.status === 'accepted');
+      const pending  = petMembers.filter(m => m.status === 'pending');
+      return (
+        <View style={styles.form}>
+          <TouchableOpacity style={styles.btnPrimary} onPress={() => { setInviteEmail(''); setScreen('InviteCoOwner'); }} activeOpacity={0.85}>
+            <Text style={styles.btnPrimaryText}>+ Invitar co-dueño</Text>
+          </TouchableOpacity>
+
+          {accepted.length > 0 && (
+            <Card title="Co-dueños activos" accent={C.success}>
+              {accepted.map(m => (
+                <View key={m.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <View style={[styles.dashCardIconWrap, { backgroundColor: C.successLight }]}>
+                    <Text style={{ fontSize: 18 }}>👤</Text>
+                  </View>
+                  <Text style={{ flex: 1, color: C.text, fontWeight: '600', fontSize: 14 }}>{m.invited_email}</Text>
+                  <TouchableOpacity onPress={() => removeCoOwner(m.id)} activeOpacity={0.7}>
+                    <Text style={{ color: C.danger, fontWeight: '700', fontSize: 13 }}>Eliminar</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </Card>
+          )}
+
+          {pending.length > 0 && (
+            <Card title="Invitaciones pendientes" accent={C.warning}>
+              {pending.map(m => (
+                <View key={m.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <View style={[styles.dashCardIconWrap, { backgroundColor: C.warningLight }]}>
+                    <Text style={{ fontSize: 18 }}>⏳</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: C.text, fontWeight: '600', fontSize: 14 }}>{m.invited_email}</Text>
+                    <Text style={{ color: C.textMuted, fontSize: 12 }}>Pendiente de aceptar</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => removeCoOwner(m.id)} activeOpacity={0.7}>
+                    <Text style={{ color: C.danger, fontWeight: '700', fontSize: 13 }}>Cancelar</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </Card>
+          )}
+
+          {petMembers.length === 0 && !loading && (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateEmoji}>👥</Text>
+              <Text style={styles.emptyStateTitle}>Sin co-dueños</Text>
+              <Text style={styles.emptyStateHint}>Invita a alguien para compartir el cuidado de {selectedPet?.name}.</Text>
+            </View>
+          )}
+        </View>
+      );
+    }
+
+    if (screen === 'InviteCoOwner') {
+      return (
+        <View style={styles.form}>
+          <Card title={`Invitar co-dueño para ${selectedPet?.name}`} accent={C.primary}>
+            <Text style={{ color: C.textLight, fontSize: 13, lineHeight: 18 }}>
+              El co-dueño podrá ver y editar el perfil, vacunas e historial veterinario de {selectedPet?.name}.
+              Recibirá un email con la invitación.
+            </Text>
+          </Card>
+
+          <Card>
+            <Text style={styles.fieldLabel}>Email del co-dueño</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="correo@ejemplo.com"
+              placeholderTextColor={C.textMuted}
+              value={inviteEmail}
+              onChangeText={setInviteEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              autoCorrect={false}
+            />
+          </Card>
+
+          <TouchableOpacity style={styles.btnPrimary} onPress={sendCoOwnerInvite} disabled={loading} activeOpacity={0.85}>
+            <Text style={styles.btnPrimaryText}>{loading ? 'Enviando...' : 'Enviar invitación'}</Text>
+          </TouchableOpacity>
         </View>
       );
     }
@@ -2351,8 +2606,9 @@ export default function App() {
 
     if (screen === 'Home') {
       const lostCount = allLostPets.length;
-      const firstName = userName
-        ? userName.split(' ')[0].charAt(0).toUpperCase() + userName.split(' ')[0].slice(1).toLowerCase()
+      const rawFirst = userProfile?.first_name || userName?.split(' ')[0] || null;
+      const firstName = rawFirst
+        ? rawFirst.charAt(0).toUpperCase() + rawFirst.slice(1).toLowerCase()
         : null;
       return (
         <View style={styles.form}>
@@ -2418,6 +2674,11 @@ export default function App() {
               <Text style={styles.dashCardTitle}>Mi Perfil</Text>
               <Text style={styles.dashCardHint}>Datos personales y cuenta</Text>
             </View>
+            {pendingInvitations.length > 0 && (
+              <View style={styles.inviteBadge}>
+                <Text style={styles.inviteBadgeText}>{pendingInvitations.length}</Text>
+              </View>
+            )}
             <Text style={styles.dashCardArrow}>›</Text>
           </TouchableOpacity>
 
@@ -2851,6 +3112,12 @@ export default function App() {
           <TouchableOpacity style={styles.btnPrimary} onPress={() => setScreen('LinkTag')} activeOpacity={0.85}>
             <Text style={styles.btnPrimaryText}>🏷️  Vincular tag NFC / QR</Text>
           </TouchableOpacity>
+
+          {selectedPet?.owner_id === userId && (
+            <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: C.dark }]} onPress={() => setScreen('PetMembers')} activeOpacity={0.85}>
+              <Text style={styles.btnPrimaryText}>👥  Co-dueños</Text>
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen('Home')} activeOpacity={0.85}>
             <Text style={styles.btnGhostText}>← Volver a mis mascotas</Text>
@@ -4705,4 +4972,17 @@ const styles = StyleSheet.create({
   },
   filterChipText:       { fontSize: 13, fontWeight: '700', color: C.textLight },
   filterChipTextActive: { color: C.white },
+
+  // ─── Invite badge ───────────────────────────────────────────────────────────
+  inviteBadge: {
+    backgroundColor: C.accent,
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 5,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    marginRight: 4,
+  },
+  inviteBadgeText: { color: C.white, fontSize: 12, fontWeight: '800' as const },
 });
