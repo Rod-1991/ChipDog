@@ -91,3 +91,11 @@ Es el sitio web público donde cualquier persona que encuentre una mascota perdi
 npm install
 npm run -w @chipdog/web dev
 ```
+
+El servidor corre en http://localhost:3000
+
+### Conexión con el monorepo
+
+- Usa el paquete compartido `@chipdog/shared` para tipos e interfaces comunes.
+- Se conecta a la misma base de datos Supabase que la app mobile.
+- Estructura monorepo con npm workspaces.
