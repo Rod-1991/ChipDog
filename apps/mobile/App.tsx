@@ -250,6 +250,45 @@ const C = {
 };
 // ─────────────────────────────────────────────────────────────────────────────
 
+const COMUNAS_CHILE = [
+  'Alhué','Alto Hospicio','Alto Biobío','Ancud','Andacollo','Angol','Antofagasta','Antuco','Arauco',
+  'Arica','Aysén','Buin','Bulnes','Cabo de Hornos','Calama','Caldera','Calera','Calbuco','Cañete',
+  'Carahue','Cartagena','Casablanca','Castro','Catemu','Cauquenes','Chaitén','Chañaral','Chépica',
+  'Chiguayante','Chile Chico','Chillán','Chillán Viejo','Chimbarongo','Cholchol','Chonchi','Cisnes',
+  'Cobquecura','Cochamó','Coihaique','Coinco','Colbún','Colchagua','Collipulli','Coltauco','Combarbalá',
+  'Concepción','Conchalí','Constitución','Contulmo','Copiapó','Coquimbo','Coronel','Corral',
+  'Cunco','Curacautín','Curacaví','Curanilahue','Curepto','Curicó','Dalcahue','Diego de Almagro',
+  'Doñihue','El Bosque','El Carmen','El Monte','El Quisco','El Tabo','Empedrado','Ercilla',
+  'Florida','Freirina','Fresia','Frutillar','Futaleufu','Futaleufú','Galvarino','General Lagos',
+  'Graneros','Guaitecas','Hijuelas','Hualaihué','Hualañé','Hualpén','Huara','Huasco','Illapel',
+  'Independencia','Iquique','Juan Fernández','La Cisterna','La Cruz','La Estrella','La Florida',
+  'La Granja','La Higuera','La Ligua','La Pintana','La Reina','La Serena','La Unión','Lago Ranco',
+  'Lago Verde','Laguna Blanca','Laja','Lampa','Lanco','Las Condes','Lautaro','Lebu','Licantén',
+  'Limache','Linares','Lo Barnechea','Lo Espejo','Lo Prado','Lolol','Loncoche','Longaví','Lonquimay',
+  'Los Andes','Los Álamos','Los Lagos','Los Muermos','Los Sauces','Los Vilos','Lota','Lumaco',
+  'Macul','Maipú','Malloa','Mariquina','Maule','Mejillones','Melipeuco','Melipilla','Molina',
+  'Monte Patria','Mostazal','Mulchén','Nacimiento','Nancagua','Natales','Navidad','Negrete',
+  'Ninhue','Nogales','Nueva Imperial','Ñiquén','Ñuñoa','O\'Higgins','Olivar','Olmué','Osorno',
+  'Ovalle','Padre Hurtado','Padre Las Casas','Paillaco','Paine','Palena','Palmilla','Panguipulli',
+  'Parral','Pedro Aguirre Cerda','Pelarco','Pelluhue','Pemuco','Peñaflor','Peñalolén','Peralillo',
+  'Perquenco','Petorca','Peumo','Pica','Pichidegua','Pichilemu','Pilmahue','Pinto','Pirque',
+  'Pitrufquén','Placilla','Portezuelo','Porvenir','Pozo Almonte','Primavera','Providencia',
+  'Puchuncaví','Pucón','Pudahuel','Puente Alto','Puerto Montt','Puerto Natales','Puerto Octay',
+  'Puerto Varas','Punta Arenas','Purén','Purranque','Puyehue','Queilén','Quemchi','Quilaco',
+  'Quilicura','Quilleco','Quillón','Quillota','Quilpué','Quinchao','Quinta de Tilcoco','Quinta Normal',
+  'Quintero','Quirihue','Rancagua','Rauco','Recoleta','Renaico','Renca','Rengo','Requínoa',
+  'Retiro','Río Bueno','Río Claro','Río Hurtado','Río Ibáñez','Río Negro','Río Vergara',
+  'Romeral','Saavedra','San Antonio','San Bernardo','San Carlos','San Clemente','San Esteban',
+  'San Fabián','San Felipe','San Fernando','San Gregorio','San Ignacio','San Javier',
+  'San José de Maipo','San Juan de la Costa','San Miguel','San Nicolás','San Pablo','San Pedro',
+  'San Pedro de Atacama','San Pedro de la Paz','San Rafael','San Ramón','San Rosendo',
+  'San Vicente','Santa Bárbara','Santa Cruz','Santa Juana','Santa María','Santiago',
+  'Santo Domingo','Sierra Gorda','Talca','Talcahuano','Taltal','Temuco','Teno','Tierra Amarilla',
+  'Timaukel','Tirúa','Tocopilla','Toltén','Tomé','Torres del Paine','Tortel','Traiguén',
+  'Trehuaco','Tucapel','Valdivia','Vallenar','Valparaíso','Victoria','Vicuña','Vilcún',
+  'Villa Alegre','Villa Alemana','Villarrica','Viña del Mar','Vitacura','Yerbas Buenas','Yumbel','Zapallar'
+].sort();
+
 const autoFormatDate = (v: string): string => {
   let clean = v.replace(/[^\d]/g, '');
   if (clean.length > 2) clean = clean.slice(0, 2) + '/' + clean.slice(2);
@@ -367,12 +406,12 @@ const buildCalendarDays = (date: Date) => {
 const parseBirthDateText = (input: string) => {
   const trimmed = input.trim();
   if (!trimmed) return null;
-  const match = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{2})$/);
+  const match = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{2,4})$/);
   if (!match) return null;
   const day = Number(match[1]);
   const month = Number(match[2]);
   const rawYear = Number(match[3]);
-  const year = 2000 + rawYear;
+  const year = rawYear < 100 ? 2000 + rawYear : rawYear;
   const asDate = new Date(year, month - 1, day);
 
   if (
@@ -509,6 +548,10 @@ export default function App() {
   });
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [showProfileSexDropdown, setShowProfileSexDropdown] = useState(false);
+  const [showProfileCommuneDropdown, setShowProfileCommuneDropdown] = useState(false);
+  const [communeSearch, setCommuneSearch] = useState('');
+  const [showRegisterCommuneDropdown, setShowRegisterCommuneDropdown] = useState(false);
+  const [registerCommuneSearch, setRegisterCommuneSearch] = useState('');
 
   const [vetHistory, setVetHistory] = useState<VetRecord[]>([]);
   const [vetView, setVetView] = useState<'list' | 'detail' | 'form'>('list');
@@ -681,10 +724,9 @@ export default function App() {
       const { data, error } = await supabase
         .from('pets')
         .select(
-          'id,name,species,breed,is_lost,photo_url,color,birth_year,birth_date_text,sex,weight_kg,description,sterilized,chip_number,blood_type,insurance_name,insurance_policy,contact_primary_name,owner_phone,contact_secondary_name,contact_secondary_phone,owner_whatsapp,public_notes,allergies,medications,conditions,vet_name,vet_phone'
+          'id,owner_id,name,species,breed,is_lost,photo_url,color,birth_year,birth_date_text,sex,weight_kg,description,sterilized,chip_number,blood_type,insurance_name,insurance_policy,contact_primary_name,owner_phone,contact_secondary_name,contact_secondary_phone,owner_whatsapp,public_notes,allergies,medications,conditions,vet_name,vet_phone'
         )
         .eq('id', petId)
-        .eq('owner_id', user.id)
         .single();
 
       if (error) {
@@ -883,7 +925,7 @@ export default function App() {
         .update(payload)
         .eq('id', selectedPet.id)
         .select(
-          'id,name,species,breed,is_lost,photo_url,color,birth_year,birth_date_text,sex,weight_kg,description,sterilized,chip_number,blood_type,insurance_name,insurance_policy,contact_primary_name,owner_phone,contact_secondary_name,contact_secondary_phone,owner_whatsapp,public_notes,allergies,medications,conditions,vet_name,vet_phone'
+          'id,owner_id,name,species,breed,is_lost,photo_url,color,birth_year,birth_date_text,sex,weight_kg,description,sterilized,chip_number,blood_type,insurance_name,insurance_policy,contact_primary_name,owner_phone,contact_secondary_name,contact_secondary_phone,owner_whatsapp,public_notes,allergies,medications,conditions,vet_name,vet_phone'
         )
         .single();
 
@@ -1136,18 +1178,11 @@ export default function App() {
     }
     setLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${supabaseUrl}/functions/v1/invite-coowner`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`,
-        },
-        body: JSON.stringify({ pet_id: selectedPet.id, invited_email: email }),
+      const { data: json, error: fnError } = await supabase.functions.invoke('invite-coowner', {
+        body: { pet_id: selectedPet.id, invited_email: email },
       });
-      const json = await res.json();
-      if (!res.ok) {
-        Alert.alert('Error', json.error ?? 'No se pudo enviar la invitación.');
+      if (fnError) {
+        Alert.alert('Error', fnError.message ?? 'No se pudo enviar la invitación.');
         return;
       }
       setInviteEmail('');
@@ -1286,8 +1321,8 @@ export default function App() {
     if (!rut.trim()) { Alert.alert('Campo requerido', 'Ingresa tu RUT.'); return; }
     if (!sex) { Alert.alert('Campo requerido', 'Selecciona tu sexo.'); return; }
     const year = parseInt(birthYear);
-    if (!birthYear || isNaN(year) || year < 1920 || year > 2006) {
-      Alert.alert('Año inválido', 'Ingresa un año de nacimiento válido (entre 1920 y 2006).'); return;
+    if (!birthYear || isNaN(year) || year < 1920 || year > 2010) {
+      Alert.alert('Año inválido', 'Ingresa un año de nacimiento válido.'); return;
     }
     if (!commune.trim()) { Alert.alert('Campo requerido', 'Ingresa tu comuna.'); return; }
 
@@ -1350,6 +1385,11 @@ export default function App() {
     setAllLostPets([]);
     setNearbyUserLoc(null);
     setUserName(null);
+    setUserId(null);
+    setUserProfile(null);
+    setProfileDraft({ first_name: '', last_name: '', phone: '', rut: '', sex: '', birth_year: 0, commune: '' });
+    setPendingInvitations([]);
+    setLostPetSignedUrls({});
     setIsLoggedIn(false);
     setEmail('');
     setPassword('');
@@ -1430,23 +1470,12 @@ export default function App() {
           .update({ pet_id: selectedPet.id, status: 'linked' }).eq('code', code);
         if (error) throw error;
       } else {
-        // Vinculado a otra mascota — preguntar
-        await new Promise<void>((resolve) => {
-          Alert.alert(
-            'Tag en uso',
-            `Este tag ya está vinculado a otra mascota. ¿Reasignarlo a ${selectedPet.name}?`,
-            [
-              { text: 'Cancelar', style: 'cancel', onPress: () => resolve() },
-              { text: 'Reasignar', style: 'destructive', onPress: async () => {
-                const { error } = await supabase.from('tags')
-                  .update({ pet_id: selectedPet.id, status: 'linked' }).eq('code', code);
-                if (error) Alert.alert('Error', error.message);
-                else { setScreen('PetDetail'); }
-                resolve();
-              }}
-            ]
-          );
-        });
+        // Vinculado a otra mascota — bloqueo total
+        Alert.alert(
+          '🔒 Tag no disponible',
+          `El tag ${code} ya está registrado con otra mascota y no puede ser reutilizado.\n\nCada tag físico pertenece de por vida a una sola mascota.`,
+          [{ text: 'Entendido', style: 'cancel' }]
+        );
         return false;
       }
       return true;
@@ -2199,12 +2228,12 @@ export default function App() {
                 <View style={[styles.loginInputWrap, { flex: 1 }]}>
                   <Text style={styles.loginInputLabel}>Nombre</Text>
                   <TextInput value={registerForm.firstName} onChangeText={(v) => setRegisterForm(p => ({ ...p, firstName: v }))}
-                    style={styles.loginInput} placeholder="Rodrigo" placeholderTextColor={C.textMuted} autoCorrect={false} />
+                    style={styles.loginInput} placeholder="Rodrigo" placeholderTextColor={C.textMuted} autoCorrect={false} autoComplete="off" textContentType="none" />
                 </View>
                 <View style={[styles.loginInputWrap, { flex: 1 }]}>
                   <Text style={styles.loginInputLabel}>Apellido</Text>
                   <TextInput value={registerForm.lastName} onChangeText={(v) => setRegisterForm(p => ({ ...p, lastName: v }))}
-                    style={styles.loginInput} placeholder="Arriagada" placeholderTextColor={C.textMuted} autoCorrect={false} />
+                    style={styles.loginInput} placeholder="Arriagada" placeholderTextColor={C.textMuted} autoCorrect={false} autoComplete="off" textContentType="none" />
                 </View>
               </View>
 
@@ -2251,8 +2280,8 @@ export default function App() {
               <View style={styles.loginInputWrap}>
                 <Text style={styles.loginInputLabel}>Teléfono</Text>
                 <TextInput value={registerForm.phone} onChangeText={(v) => setRegisterForm(p => ({ ...p, phone: v }))}
-                  style={styles.loginInput} placeholder="+56 9 1234 5678" placeholderTextColor={C.textMuted}
-                  keyboardType="phone-pad" />
+                  style={styles.loginInput} placeholder="+56912345678" placeholderTextColor={C.textMuted}
+                  keyboardType="phone-pad" autoComplete="off" textContentType="none" />
               </View>
 
               <View style={styles.loginInputWrap}>
@@ -2261,7 +2290,7 @@ export default function App() {
                   value={registerForm.rut}
                   onChangeText={(v) => setRegisterForm(p => ({ ...p, rut: formatRut(v) }))}
                   style={styles.loginInput} placeholder="12.345.678-9" placeholderTextColor={C.textMuted}
-                  autoCapitalize="characters" autoCorrect={false} maxLength={12} />
+                  autoCapitalize="characters" autoCorrect={false} maxLength={12} autoComplete="off" textContentType="none" />
               </View>
 
               <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -2269,7 +2298,7 @@ export default function App() {
                   <Text style={styles.loginInputLabel}>Año de nacimiento</Text>
                   <TextInput value={registerForm.birthYear} onChangeText={(v) => setRegisterForm(p => ({ ...p, birthYear: v }))}
                     style={styles.loginInput} placeholder="1991" placeholderTextColor={C.textMuted}
-                    keyboardType="number-pad" maxLength={4} />
+                    keyboardType="number-pad" maxLength={4} autoComplete="off" textContentType="none" />
                 </View>
                 <View style={[styles.loginInputWrap, { flex: 1 }]}>
                   <Text style={styles.loginInputLabel}>Sexo</Text>
@@ -2298,8 +2327,33 @@ export default function App() {
 
               <View style={styles.loginInputWrap}>
                 <Text style={styles.loginInputLabel}>Comuna</Text>
-                <TextInput value={registerForm.commune} onChangeText={(v) => setRegisterForm(p => ({ ...p, commune: v }))}
-                  style={styles.loginInput} placeholder="Ej: Las Condes" placeholderTextColor={C.textMuted} />
+                <TouchableOpacity style={[styles.loginInput, styles.selectInput]}
+                  onPress={() => { setShowRegisterCommuneDropdown(v => !v); setRegisterCommuneSearch(''); }} activeOpacity={0.9}>
+                  <Text style={[styles.selectInputText, !registerForm.commune && { color: C.textMuted }]}>
+                    {registerForm.commune || 'Seleccionar comuna'}
+                  </Text>
+                  <Text style={styles.selectChevron}>{showRegisterCommuneDropdown ? '▲' : '▼'}</Text>
+                </TouchableOpacity>
+                {showRegisterCommuneDropdown && (
+                  <View style={[styles.selectMenu, { maxHeight: 220 }]}>
+                    <TextInput
+                      style={[styles.loginInput, { marginBottom: 4 }]}
+                      placeholder="Buscar comuna..."
+                      placeholderTextColor={C.textMuted}
+                      value={registerCommuneSearch}
+                      onChangeText={setRegisterCommuneSearch}
+                      autoCorrect={false}
+                    />
+                    <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled" style={{ maxHeight: 160 }}>
+                      {COMUNAS_CHILE.filter(c => c.toLowerCase().includes(registerCommuneSearch.toLowerCase())).map(c => (
+                        <TouchableOpacity key={c} style={[styles.selectOption, registerForm.commune === c && styles.selectOptionActive]}
+                          onPress={() => { setRegisterForm(p => ({ ...p, commune: c })); setShowRegisterCommuneDropdown(false); setRegisterCommuneSearch(''); }}>
+                          <Text style={[styles.selectOptionText, registerForm.commune === c && styles.selectOptionTextActive]}>{c}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
               </View>
 
               <TouchableOpacity style={styles.btnPrimary} onPress={handleRegister} disabled={loading} activeOpacity={0.85}>
@@ -2345,24 +2399,24 @@ export default function App() {
                     <Text style={styles.fieldLabel}>Nombre</Text>
                     <TextInput style={styles.input} value={profileDraft.first_name}
                       onChangeText={(v) => setProfileDraft(p => ({ ...p, first_name: v }))}
-                      placeholder="Nombre" placeholderTextColor={C.textMuted} autoCorrect={false} />
+                      placeholder="Nombre" placeholderTextColor={C.textMuted} autoCorrect={false} autoComplete="off" textContentType="none" />
 
                     <Text style={styles.fieldLabel}>Apellido</Text>
                     <TextInput style={styles.input} value={profileDraft.last_name}
                       onChangeText={(v) => setProfileDraft(p => ({ ...p, last_name: v }))}
-                      placeholder="Apellido" placeholderTextColor={C.textMuted} autoCorrect={false} />
+                      placeholder="Apellido" placeholderTextColor={C.textMuted} autoCorrect={false} autoComplete="off" textContentType="none" />
 
                     <Text style={styles.fieldLabel}>Teléfono</Text>
                     <TextInput style={styles.input} value={profileDraft.phone}
                       onChangeText={(v) => setProfileDraft(p => ({ ...p, phone: v }))}
-                      placeholder="+56 9 1234 5678" placeholderTextColor={C.textMuted}
-                      keyboardType="phone-pad" />
+                      placeholder="+56912345678" placeholderTextColor={C.textMuted}
+                      keyboardType="phone-pad" autoComplete="off" textContentType="none" />
 
                     <Text style={styles.fieldLabel}>RUT</Text>
                     <TextInput style={styles.input} value={profileDraft.rut}
                       onChangeText={(v) => setProfileDraft(p => ({ ...p, rut: formatRut(v) }))}
                       placeholder="12.345.678-9" placeholderTextColor={C.textMuted}
-                      autoCapitalize="characters" autoCorrect={false} maxLength={12} />
+                      autoCapitalize="characters" autoCorrect={false} maxLength={12} autoComplete="off" textContentType="none" />
 
                     <Text style={styles.fieldLabel}>Sexo</Text>
                     <TouchableOpacity style={[styles.input, styles.selectInput]}
@@ -2388,12 +2442,36 @@ export default function App() {
                     <TextInput style={styles.input} value={profileDraft.birth_year ? String(profileDraft.birth_year) : ''}
                       onChangeText={(v) => setProfileDraft(p => ({ ...p, birth_year: parseInt(v) || 0 }))}
                       placeholder="1991" placeholderTextColor={C.textMuted}
-                      keyboardType="number-pad" maxLength={4} />
+                      keyboardType="number-pad" maxLength={4} autoComplete="off" textContentType="none" />
 
                     <Text style={styles.fieldLabel}>Comuna</Text>
-                    <TextInput style={styles.input} value={profileDraft.commune}
-                      onChangeText={(v) => setProfileDraft(p => ({ ...p, commune: v }))}
-                      placeholder="Ej: Las Condes" placeholderTextColor={C.textMuted} />
+                    <TouchableOpacity style={[styles.input, styles.selectInput]}
+                      onPress={() => { setShowProfileCommuneDropdown(v => !v); setCommuneSearch(''); }} activeOpacity={0.9}>
+                      <Text style={[styles.selectInputText, !profileDraft.commune && { color: C.textMuted }]}>
+                        {profileDraft.commune || 'Seleccionar comuna'}
+                      </Text>
+                      <Text style={styles.selectChevron}>{showProfileCommuneDropdown ? '▲' : '▼'}</Text>
+                    </TouchableOpacity>
+                    {showProfileCommuneDropdown && (
+                      <View style={[styles.selectMenu, { maxHeight: 200 }]}>
+                        <TextInput
+                          style={[styles.input, { marginBottom: 4 }]}
+                          placeholder="Buscar comuna..."
+                          placeholderTextColor={C.textMuted}
+                          value={communeSearch}
+                          onChangeText={setCommuneSearch}
+                          autoCorrect={false}
+                        />
+                        <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled" style={{ maxHeight: 150 }}>
+                          {COMUNAS_CHILE.filter(c => c.toLowerCase().includes(communeSearch.toLowerCase())).map(c => (
+                            <TouchableOpacity key={c} style={[styles.selectOption, profileDraft.commune === c && styles.selectOptionActive]}
+                              onPress={() => { setProfileDraft(p => ({ ...p, commune: c })); setShowProfileCommuneDropdown(false); setCommuneSearch(''); }}>
+                              <Text style={[styles.selectOptionText, profileDraft.commune === c && styles.selectOptionTextActive]}>{c}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </ScrollView>
+                      </View>
+                    )}
                   </Card>
 
                   <TouchableOpacity style={styles.btnPrimary} onPress={saveUserProfile} disabled={loading} activeOpacity={0.85}>
@@ -3110,7 +3188,8 @@ export default function App() {
             </View>
           </View>
 
-          {/* Switch perdido */}
+          {/* Switch perdido — solo dueño */}
+          {(!selectedPet.owner_id || !userId || selectedPet.owner_id === userId) && (
           <Card>
             <View style={styles.switchRow}>
               <Text style={styles.switchLabel}>🚨  Activar modo perdido</Text>
@@ -3130,6 +3209,7 @@ export default function App() {
               </TouchableOpacity>
             )}
           </Card>
+          )}
 
           {/* Nav grid 2x2 */}
           <View style={styles.navGrid}>
@@ -3158,9 +3238,11 @@ export default function App() {
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity style={styles.btnPrimary} onPress={() => setScreen('LinkTag')} activeOpacity={0.85}>
-            <Text style={styles.btnPrimaryText}>🏷️  Vincular tag NFC / QR</Text>
-          </TouchableOpacity>
+          {(!selectedPet?.owner_id || !userId || selectedPet.owner_id === userId) && (
+            <TouchableOpacity style={styles.btnPrimary} onPress={() => setScreen('LinkTag')} activeOpacity={0.85}>
+              <Text style={styles.btnPrimaryText}>🏷️  Vincular tag NFC / QR</Text>
+            </TouchableOpacity>
+          )}
 
           {(!selectedPet?.owner_id || !userId || selectedPet.owner_id === userId) && (
             <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: C.dark }]} onPress={() => setScreen('PetMembers')} activeOpacity={0.85}>
@@ -3171,6 +3253,33 @@ export default function App() {
           <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen('Home')} activeOpacity={0.85}>
             <Text style={styles.btnGhostText}>← Volver a mis mascotas</Text>
           </TouchableOpacity>
+
+          {selectedPet?.owner_id === userId && (
+            <TouchableOpacity
+              style={{ alignItems: 'center', paddingVertical: 10 }}
+              onPress={() => {
+                Alert.alert(
+                  'Eliminar mascota',
+                  `¿Estás seguro que quieres eliminar a ${selectedPet.name}? Esta acción no se puede deshacer.`,
+                  [
+                    { text: 'Cancelar', style: 'cancel' },
+                    { text: 'Eliminar', style: 'destructive', onPress: async () => {
+                      setLoading(true);
+                      try {
+                        const { error } = await supabase.from('pets').delete().eq('id', selectedPet.id);
+                        if (error) { Alert.alert('Error', error.message); return; }
+                        setSelectedPet(null);
+                        await fetchPets();
+                        setScreen('Home');
+                      } finally { setLoading(false); }
+                    }}
+                  ]
+                );
+              }}
+              activeOpacity={0.7}>
+              <Text style={{ color: C.danger, fontWeight: '600', fontSize: 14 }}>Eliminar mascota</Text>
+            </TouchableOpacity>
+          )}
         </View>
       );
     }
@@ -3687,7 +3796,6 @@ export default function App() {
             <Card title="📞  Contacto principal" accent={C.primary}>
               <InfoRow label="Nombre" value={petDraft.contact_primary_name} />
               <InfoRow label="Teléfono" value={petDraft.owner_phone} />
-              <InfoRow label="WhatsApp" value={petDraft.owner_whatsapp} />
             </Card>
 
             <Card title="👤  Contacto secundario" accent={C.accent}>
@@ -3719,7 +3827,7 @@ export default function App() {
             <Text style={styles.fieldLabel}>Nombre</Text>
             <TextInput
               style={styles.input}
-              placeholder="Ej: Rodrigo Arriagada"
+              placeholder="Ej: Nombre Apellido"
               placeholderTextColor={C.textMuted}
               value={petDraft.contact_primary_name}
               onChangeText={(v) => setPetDraft((p) => ({ ...p, contact_primary_name: v }))}
@@ -3727,19 +3835,10 @@ export default function App() {
             <Text style={styles.fieldLabel}>Teléfono</Text>
             <TextInput
               style={styles.input}
-              placeholder="+56 9 1234 5678"
+              placeholder="+56912345678"
               placeholderTextColor={C.textMuted}
               value={petDraft.owner_phone}
               onChangeText={(v) => setPetDraft((p) => ({ ...p, owner_phone: v }))}
-              keyboardType="phone-pad"
-            />
-            <Text style={styles.fieldLabel}>WhatsApp (número con código país)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ej: 56912345678"
-              placeholderTextColor={C.textMuted}
-              value={petDraft.owner_whatsapp}
-              onChangeText={(v) => setPetDraft((p) => ({ ...p, owner_whatsapp: v }))}
               keyboardType="phone-pad"
             />
           </Card>
@@ -3749,7 +3848,7 @@ export default function App() {
             <Text style={styles.fieldLabel}>Nombre</Text>
             <TextInput
               style={styles.input}
-              placeholder="Ej: Carolina Poehls"
+              placeholder="Ej: María González"
               placeholderTextColor={C.textMuted}
               value={petDraft.contact_secondary_name}
               onChangeText={(v) => setPetDraft((p) => ({ ...p, contact_secondary_name: v }))}
@@ -3757,7 +3856,7 @@ export default function App() {
             <Text style={styles.fieldLabel}>Teléfono</Text>
             <TextInput
               style={styles.input}
-              placeholder="+56 9 8765 4321"
+              placeholder="+56912345678"
               placeholderTextColor={C.textMuted}
               value={petDraft.contact_secondary_phone}
               onChangeText={(v) => setPetDraft((p) => ({ ...p, contact_secondary_phone: v }))}
@@ -3778,7 +3877,7 @@ export default function App() {
             <Text style={styles.fieldLabel}>Teléfono</Text>
             <TextInput
               style={styles.input}
-              placeholder="+56 2 1234 5678"
+              placeholder="+56912345678"
               placeholderTextColor={C.textMuted}
               value={petDraft.vet_phone}
               onChangeText={(v) => setPetDraft((p) => ({ ...p, vet_phone: v }))}
@@ -3794,7 +3893,7 @@ export default function App() {
             <TextInput
               style={[styles.input, styles.multiline]}
               multiline
-              placeholder='Ej: "Es asustadizo, no lo persigan. Llamen a Rodrigo."'
+              placeholder='Ej: "Es asustadizo, no lo persigan. Llamen al dueño."'
               placeholderTextColor={C.textMuted}
               value={petDraft.public_notes}
               onChangeText={(v) => setPetDraft((p) => ({ ...p, public_notes: v }))}
@@ -4043,7 +4142,6 @@ export default function App() {
 
     if (screen === 'LostPetDetail' && selectedLostPet) {
       const pet = selectedLostPet;
-      const waNumber = pet.owner_whatsapp?.replace(/\D/g, '');
       return (
         <View style={styles.form}>
           {/* Hero */}
@@ -4083,18 +4181,13 @@ export default function App() {
               <Text style={styles.btnPrimaryText}>📞  Llamar al dueño</Text>
             </TouchableOpacity>
           )}
-          {waNumber && (
-            <TouchableOpacity
-              style={[styles.btnPrimary, { backgroundColor: '#25D366' }]}
-              onPress={() => Linking.openURL(`https://wa.me/${waNumber}?text=${encodeURIComponent(`Hola, vi el reporte de ${pet.name} en ChipDog 🐾`)}`)}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.btnPrimaryText}>💬  WhatsApp</Text>
-            </TouchableOpacity>
-          )}
+
 
           <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen('LostPetList')} activeOpacity={0.85}>
             <Text style={styles.btnGhostText}>Volver a la lista</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.btnGhost, { marginTop: 4 }]} onPress={() => setScreen('NearbyMap')} activeOpacity={0.85}>
+            <Text style={styles.btnGhostText}>Volver al mapa</Text>
           </TouchableOpacity>
         </View>
       );
@@ -4375,7 +4468,7 @@ export default function App() {
           <ScrollView
             contentContainerStyle={styles.scroll}
             keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
+            keyboardDismissMode="interactive"
           >
             {renderScreen()}
           </ScrollView>
@@ -4400,7 +4493,7 @@ const styles = StyleSheet.create({
 
   // ─── Layout ────────────────────────────────────────────────────────────────
   container: { flex: 1, backgroundColor: C.bg },
-  scroll:    { padding: 16, paddingBottom: 36 },
+  scroll:    { padding: 16, paddingBottom: 120 },
   title:     { fontSize: 22, fontWeight: '800', color: C.dark, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 4 },
 
   // ─── NavBar ────────────────────────────────────────────────────────────────
