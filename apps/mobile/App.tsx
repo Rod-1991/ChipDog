@@ -81,7 +81,6 @@ type PetMemberInvitation = {
   pet_species: string;
   pet_photo_url: string | null;
   invited_by_name: string;
-  invited_by: string;
   invited_email: string;
   created_at: string;
 };
@@ -1047,18 +1046,6 @@ export default function App() {
 
     init();
 
-    // Navegar a Mi Perfil cuando el usuario toca una notificación de invitación
-    const notifSub = Notifications.addNotificationResponseReceivedListener((response) => {
-      const data = response.notification.request.content.data as any;
-      if (data?.type === 'co_owner_invitation') {
-        setScreen('PetList');
-      } else if (data?.type === 'co_owner_response') {
-        setScreen('PetList');
-      } else if (data?.type === 'pet_record' && data?.pet_id) {
-        loadPetDetail(data.pet_id).then(() => setScreen('PetDetail'));
-      }
-    });
-
     const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (!mounted) return;
 
@@ -1079,7 +1066,6 @@ export default function App() {
     return () => {
       mounted = false;
       sub.subscription.unsubscribe();
-      notifSub.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1212,7 +1198,7 @@ export default function App() {
     }
   };
 
-  const respondInvitation = async (inv: PetMemberInvitation, accept: boolean) => {
+  const respondInvitation = async (memberId: number, accept: boolean) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     setLoading(true);
@@ -1220,47 +1206,16 @@ export default function App() {
       const { error } = await supabase
         .from('pet_members')
         .update({ status: accept ? 'accepted' : 'rejected', user_id: user.id, updated_at: new Date().toISOString() })
-        .eq('id', inv.id);
+        .eq('id', memberId);
       if (error) { Alert.alert('Error', error.message); return; }
       await loadPendingInvitations();
       if (accept) {
         await fetchPets();
-        await loadPetDetail(inv.pet_id);
-        setScreen('PetDetail');
+        Alert.alert('¡Bienvenido!', 'Ahora eres co-dueño de esta mascota. Aparecerá en tu lista.');
       }
     } finally {
       setLoading(false);
     }
-  };
-
-  const leaveCoOwnership = async () => {
-    if (!selectedPet) return;
-    Alert.alert(
-      'Salir como co-dueño',
-      `¿Seguro que quieres dejar de ser co-dueño de ${selectedPet.name}? Perderás acceso a su perfil.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Salir', style: 'destructive', onPress: async () => {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return;
-            setLoading(true);
-            try {
-              const { error } = await supabase
-                .from('pet_members')
-                .delete()
-                .eq('pet_id', selectedPet.id)
-                .eq('user_id', user.id);
-              if (error) { Alert.alert('Error', error.message); return; }
-              await fetchPets();
-              setScreen('PetList');
-            } finally {
-              setLoading(false);
-            }
-          }
-        }
-      ]
-    );
   };
 
   const removeCoOwner = async (memberId: number) => {
@@ -2077,9 +2032,8 @@ export default function App() {
     }
   }, [screen]);
 
-  // Cargar invitaciones y miembros
+  // Cargar miembros al entrar a PetMembers
   useEffect(() => {
-    if (screen === 'PetList') loadPendingInvitations();
     if (screen === 'PetMembers' && selectedPet) loadPetMembers(selectedPet.id);
   }, [screen, selectedPet?.id]);
 
@@ -2539,6 +2493,42 @@ export default function App() {
                     <InfoRow label="Comuna" value={profileDraft.commune} />
                   </Card>
 
+                  {pendingInvitations.length > 0 && (
+                    <Card title={`Invitaciones (${pendingInvitations.length})`} accent={C.warning}>
+                      {pendingInvitations.map(inv => (
+                        <View key={inv.id} style={{ marginBottom: 14 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                            <View style={[styles.dashCardIconWrap, { backgroundColor: C.warningLight }]}>
+                              <Text style={{ fontSize: 18 }}>{inv.pet_species === 'Gato' ? '🐱' : '🐶'}</Text>
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ color: C.text, fontWeight: '700', fontSize: 14 }}>{inv.pet_name}</Text>
+                              <Text style={{ color: C.textMuted, fontSize: 12 }}>
+                                Invitación de {inv.invited_by_name || inv.invited_email}
+                              </Text>
+                            </View>
+                          </View>
+                          <View style={{ flexDirection: 'row', gap: 10 }}>
+                            <TouchableOpacity
+                              style={[styles.btnPrimary, { flex: 1, paddingVertical: 10 }]}
+                              onPress={() => respondInvitation(inv.id, true)}
+                              disabled={loading}
+                              activeOpacity={0.85}>
+                              <Text style={styles.btnPrimaryText}>Aceptar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.btnGhost, { flex: 1, paddingVertical: 10 }]}
+                              onPress={() => respondInvitation(inv.id, false)}
+                              disabled={loading}
+                              activeOpacity={0.7}>
+                              <Text style={styles.btnGhostText}>Rechazar</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      ))}
+                    </Card>
+                  )}
+
                   <TouchableOpacity style={styles.btnPrimary} onPress={() => setIsEditingProfile(true)} activeOpacity={0.85}>
                     <Text style={styles.btnPrimaryText}>Editar perfil</Text>
                   </TouchableOpacity>
@@ -2778,11 +2768,6 @@ export default function App() {
               <Text style={styles.dashCardTitle}>Mis Mascotas</Text>
               <Text style={styles.dashCardHint}>Perfiles, vacunas e historial</Text>
             </View>
-            {pendingInvitations.length > 0 && (
-              <View style={styles.inviteBadge}>
-                <Text style={styles.inviteBadgeText}>{pendingInvitations.length}</Text>
-              </View>
-            )}
             <Text style={styles.dashCardArrow}>›</Text>
           </TouchableOpacity>
 
@@ -2816,6 +2801,11 @@ export default function App() {
               <Text style={styles.dashCardTitle}>Mi Perfil</Text>
               <Text style={styles.dashCardHint}>Datos personales y cuenta</Text>
             </View>
+            {pendingInvitations.length > 0 && (
+              <View style={styles.inviteBadge}>
+                <Text style={styles.inviteBadgeText}>{pendingInvitations.length}</Text>
+              </View>
+            )}
             <Text style={styles.dashCardArrow}>›</Text>
           </TouchableOpacity>
 
@@ -2840,43 +2830,6 @@ export default function App() {
             <Text style={styles.homeHeaderSubtitle}>Todo sobre tu mascota, siempre contigo.</Text>
           </View>
 
-          {/* Invitaciones pendientes */}
-          {pendingInvitations.length > 0 && (
-            <Card title={`Invitaciones (${pendingInvitations.length})`} accent={C.warning}>
-              {pendingInvitations.map(inv => (
-                <View key={inv.id} style={{ marginBottom: 14 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                    <View style={[styles.dashCardIconWrap, { backgroundColor: C.warningLight }]}>
-                      <Text style={{ fontSize: 18 }}>{inv.pet_species === 'Gato' ? '🐱' : '🐶'}</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: C.dark, fontWeight: '700', fontSize: 15 }}>{inv.pet_name}</Text>
-                      <Text style={{ color: C.textMuted, fontSize: 12, marginTop: 1 }}>
-                        {inv.invited_by_name} te invitó como co-dueño
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={{ flexDirection: 'row', gap: 10 }}>
-                    <TouchableOpacity
-                      style={[styles.btnPrimary, { flex: 1, paddingVertical: 10 }]}
-                      onPress={() => respondInvitation(inv, true)}
-                      disabled={loading}
-                      activeOpacity={0.85}>
-                      <Text style={styles.btnPrimaryText}>Aceptar</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.btnGhost, { flex: 1, paddingVertical: 10 }]}
-                      onPress={() => respondInvitation(inv, false)}
-                      disabled={loading}
-                      activeOpacity={0.7}>
-                      <Text style={styles.btnGhostText}>Rechazar</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))}
-            </Card>
-          )}
-
           {/* CTA agregar */}
           <TouchableOpacity style={styles.addPetCta} onPress={() => setScreen('AddPet')} activeOpacity={0.85}>
             <Text style={styles.addPetCtaText}>+  Agregar mascota</Text>
@@ -2897,23 +2850,14 @@ export default function App() {
                   await loadPetDetail(pet.id);
                   setScreen('PetDetail');
                 }}
-                style={[
-                  styles.petCard,
-                  pet.owner_id !== userId && {
-                    borderLeftWidth: 4,
-                    borderLeftColor: '#0EA5E9',
-                    backgroundColor: '#F0F9FF',
-                  },
-                ]}
+                style={styles.petCard}
                 activeOpacity={0.85}
               >
                 <View style={styles.petCardPhotoWrap}>
                   {petSignedUrls[pet.id] ? (
                     <Image source={{ uri: petSignedUrls[pet.id] ?? undefined }} style={styles.petCardPhoto} resizeMode="cover" />
                   ) : (
-                    <View style={[styles.petCardPhoto, styles.avatarPlaceholder,
-                      pet.owner_id !== userId && { backgroundColor: '#BAE6FD' }
-                    ]}>
+                    <View style={[styles.petCardPhoto, styles.avatarPlaceholder]}>
                       <Text style={styles.avatarInitials}>{initialsFromName(pet.name)}</Text>
                     </View>
                   )}
@@ -2925,21 +2869,10 @@ export default function App() {
                   <Text style={styles.petCardBreed}>
                     {pet.species}{pet.breed ? ` · ${pet.breed}` : ''}
                   </Text>
-                  <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
-                    <View style={[styles.badge, pet.is_lost ? styles.badgeDanger : styles.badgeOk]}>
-                      <Text style={[styles.badgeText, pet.is_lost ? styles.badgeTextDanger : styles.badgeTextOk]}>
-                        {pet.is_lost ? '🚨 Perdido' : '🏠 En casa'}
-                      </Text>
-                    </View>
-                    {pet.owner_id !== userId ? (
-                      <View style={[styles.badge, { backgroundColor: '#E0F2FE' }]}>
-                        <Text style={[styles.badgeText, { color: '#0369A1' }]}>Co-dueño</Text>
-                      </View>
-                    ) : (
-                      <View style={[styles.badge, { backgroundColor: C.primaryLight }]}>
-                        <Text style={[styles.badgeText, { color: C.primaryDark }]}>Dueño</Text>
-                      </View>
-                    )}
+                  <View style={[styles.badge, pet.is_lost ? styles.badgeDanger : styles.badgeOk, { alignSelf: 'flex-start', marginTop: 2 }]}>
+                    <Text style={[styles.badgeText, pet.is_lost ? styles.badgeTextDanger : styles.badgeTextOk]}>
+                      {pet.is_lost ? '🚨 Perdido' : '🏠 En casa'}
+                    </Text>
                   </View>
                 </View>
 
@@ -3320,15 +3253,6 @@ export default function App() {
           <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen('Home')} activeOpacity={0.85}>
             <Text style={styles.btnGhostText}>← Volver a mis mascotas</Text>
           </TouchableOpacity>
-
-          {selectedPet?.owner_id !== userId && (
-            <TouchableOpacity
-              style={{ alignItems: 'center', paddingVertical: 10 }}
-              onPress={leaveCoOwnership}
-              activeOpacity={0.7}>
-              <Text style={{ color: '#0369A1', fontWeight: '600', fontSize: 14 }}>Salir como co-dueño</Text>
-            </TouchableOpacity>
-          )}
 
           {selectedPet?.owner_id === userId && (
             <TouchableOpacity
