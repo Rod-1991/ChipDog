@@ -75,3 +75,19 @@ npm run -w @chipdog/mobile start
 npm run typecheck
 npm run -w @chipdog/mobile start
 ```
+
+## 🌐 apps/web
+
+Aplicación web del proyecto ChipDog, construida con Next.js.
+
+### ¿Para qué sirve?
+
+Es el sitio web público donde cualquier persona que encuentre una mascota perdida puede escanear el tag NFC/QR y ver los datos de contacto del dueño, sin necesidad de instalar la app.
+
+### Cómo correrlo en local
+
+```bash
+# Desde la raíz del monorepo
+npm install
+npm run -w @chipdog/web dev
+```
