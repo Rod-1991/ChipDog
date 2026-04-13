@@ -20,11 +20,10 @@ import { addPetSchema, linkTagSchema, loginSchema } from '@chipdog/shared';
 import { supabase, vetAttachmentsBucket } from './lib/supabase';
 import { C } from './constants/colors';
 import { SPECIES_OPTIONS, DOG_BREEDS, CAT_BREEDS } from './constants/breeds';
-import { COMUNAS_CHILE } from './constants/comunas';
 import {
   autoFormatDate, normalizeStringOrNull, sanitizeFilename, initialsFromName,
   formatBirthDate, formatBirthDateShort, buildCalendarDays, parseBirthDateText,
-  extractCodeFromUrl, generateTagCode, formatRut,
+  extractCodeFromUrl, generateTagCode,
 } from './utils/helpers';
 import type {
   Screen, Pet, PetMember, PetMemberInvitation, UserProfile,
@@ -33,6 +32,12 @@ import type {
 import { styles } from './styles';
 import InfoRow from './components/InfoRow';
 import Card from './components/Card';
+import LoginScreen from './screens/LoginScreen';
+import RegisterScreen from './screens/RegisterScreen';
+import FoundTagScreen from './screens/FoundTagScreen';
+import FoundResultScreen from './screens/FoundResultScreen';
+import LinkTagScreen from './screens/LinkTagScreen';
+import ProfileScreen from './screens/ProfileScreen';
 import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -42,7 +47,6 @@ import * as Device from 'expo-device';
 import * as Location from 'expo-location';
 import MapView, { Circle, Marker } from 'react-native-maps';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import QRCode from 'react-native-qrcode-svg';
 
 // NFC: carga dinámica — no disponible en Expo Go
 let NfcManager: any = null;
@@ -1783,402 +1787,49 @@ export default function App() {
   const renderScreen = () => {
     if (screen === 'Login') {
       return (
-        <View style={styles.loginWrap}>
-          {/* Brand */}
-          <View style={styles.loginBrand}>
-            <Text style={styles.loginEmoji}>🐾</Text>
-            <Text style={styles.loginTitle}>ChipDog</Text>
-            <Text style={styles.loginSubtitle}>El hogar digital de tus mascotas</Text>
-          </View>
-
-          {/* Form */}
-          <View style={styles.loginForm}>
-            <View style={styles.loginInputWrap}>
-              <Text style={styles.loginInputLabel}>Email</Text>
-              <TextInput
-                value={email}
-                onChangeText={setEmail}
-                style={styles.loginInput}
-                placeholder="tu@email.com"
-                placeholderTextColor={C.textMuted}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                autoCorrect={false}
-              />
-            </View>
-            <View style={styles.loginInputWrap}>
-              <Text style={styles.loginInputLabel}>Contraseña</Text>
-              <View style={styles.loginPasswordRow}>
-                <TextInput
-                  value={password}
-                  onChangeText={setPassword}
-                  style={[styles.loginInput, { flex: 1, marginBottom: 0 }]}
-                  placeholder="••••••••"
-                  placeholderTextColor={C.textMuted}
-                  secureTextEntry={!showPassword}
-                />
-                <TouchableOpacity style={styles.passwordEyeBtn} onPress={() => setShowPassword(v => !v)}>
-                  <Text style={styles.passwordEyeText}>{showPassword ? '🙈' : '👁'}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <TouchableOpacity style={styles.btnPrimary} onPress={handleLogin} disabled={loading} activeOpacity={0.85}>
-              <Text style={styles.btnPrimaryText}>{loading ? 'Ingresando...' : 'Ingresar'}</Text>
-            </TouchableOpacity>
-
-            <View style={styles.loginDivider}>
-              <View style={styles.loginDividerLine} />
-              <Text style={styles.loginDividerText}>¿No tienes cuenta?</Text>
-              <View style={styles.loginDividerLine} />
-            </View>
-
-            <TouchableOpacity style={styles.btnOutline} onPress={() => setScreen('Register')} activeOpacity={0.85}>
-              <Text style={styles.btnOutlineText}>Crear cuenta gratis</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={{ alignItems: 'center', paddingVertical: 8 }} onPress={() => setScreen('FoundTag')} activeOpacity={0.85}>
-              <Text style={{ color: C.textLight, fontWeight: '600', fontSize: 14 }}>🔍  Encontré una mascota</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        <LoginScreen
+          email={email} setEmail={setEmail}
+          password={password} setPassword={setPassword}
+          loading={loading}
+          showPassword={showPassword} setShowPassword={setShowPassword}
+          handleLogin={handleLogin}
+          setScreen={setScreen}
+        />
       );
     }
 
     if (screen === 'Register') {
-      const SEX_OPTIONS = ['Masculino', 'Femenino', 'Prefiero no decir'];
       return (
-        <View style={styles.loginWrap}>
-          {/* Brand + paso */}
-          <View style={styles.loginBrand}>
-            <Text style={styles.loginEmoji}>🐾</Text>
-            <Text style={styles.loginTitle}>{registerStep === 1 ? 'Crear cuenta' : 'Tu perfil'}</Text>
-            <Text style={styles.loginSubtitle}>{registerStep === 1 ? 'Paso 1 de 2 — Acceso' : 'Paso 2 de 2 — Datos personales'}</Text>
-            {/* Barra de progreso */}
-            <View style={styles.registerProgressBar}>
-              <View style={[styles.registerProgressFill, { width: registerStep === 1 ? '50%' : '100%' }]} />
-            </View>
-          </View>
-
-          {registerStep === 1 ? (
-            <View style={styles.loginForm}>
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <View style={[styles.loginInputWrap, { flex: 1 }]}>
-                  <Text style={styles.loginInputLabel}>Nombre</Text>
-                  <TextInput value={registerForm.firstName} onChangeText={(v) => setRegisterForm(p => ({ ...p, firstName: v }))}
-                    style={styles.loginInput} placeholder="Rodrigo" placeholderTextColor={C.textMuted} autoCorrect={false} autoComplete="off" textContentType="none" />
-                </View>
-                <View style={[styles.loginInputWrap, { flex: 1 }]}>
-                  <Text style={styles.loginInputLabel}>Apellido</Text>
-                  <TextInput value={registerForm.lastName} onChangeText={(v) => setRegisterForm(p => ({ ...p, lastName: v }))}
-                    style={styles.loginInput} placeholder="Arriagada" placeholderTextColor={C.textMuted} autoCorrect={false} autoComplete="off" textContentType="none" />
-                </View>
-              </View>
-
-              <View style={styles.loginInputWrap}>
-                <Text style={styles.loginInputLabel}>Email</Text>
-                <TextInput value={registerForm.email} onChangeText={(v) => setRegisterForm(p => ({ ...p, email: v }))}
-                  style={styles.loginInput} placeholder="tu@email.com" placeholderTextColor={C.textMuted}
-                  autoCapitalize="none" keyboardType="email-address" autoCorrect={false} />
-              </View>
-
-              <View style={styles.loginInputWrap}>
-                <Text style={styles.loginInputLabel}>Contraseña</Text>
-                <View style={styles.loginPasswordRow}>
-                  <TextInput value={registerForm.password} onChangeText={(v) => setRegisterForm(p => ({ ...p, password: v }))}
-                    style={[styles.loginInput, { flex: 1, marginBottom: 0 }]} placeholder="Mínimo 6 caracteres"
-                    placeholderTextColor={C.textMuted} secureTextEntry={!showPassword} />
-                  <TouchableOpacity style={styles.passwordEyeBtn} onPress={() => setShowPassword(v => !v)}>
-                    <Text style={styles.passwordEyeText}>{showPassword ? '🙈' : '👁'}</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <View style={styles.loginInputWrap}>
-                <Text style={styles.loginInputLabel}>Confirmar contraseña</Text>
-                <View style={styles.loginPasswordRow}>
-                  <TextInput value={registerForm.confirmPassword} onChangeText={(v) => setRegisterForm(p => ({ ...p, confirmPassword: v }))}
-                    style={[styles.loginInput, { flex: 1, marginBottom: 0 }]} placeholder="Repite tu contraseña"
-                    placeholderTextColor={C.textMuted} secureTextEntry={!showConfirmPassword} />
-                  <TouchableOpacity style={styles.passwordEyeBtn} onPress={() => setShowConfirmPassword(v => !v)}>
-                    <Text style={styles.passwordEyeText}>{showConfirmPassword ? '🙈' : '👁'}</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <TouchableOpacity style={styles.btnPrimary} onPress={handleRegisterStep1} activeOpacity={0.85}>
-                <Text style={styles.btnPrimaryText}>Continuar →</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={{ alignItems: 'center', paddingVertical: 8 }} onPress={() => setScreen('Login')} activeOpacity={0.85}>
-                <Text style={{ color: C.textLight, fontWeight: '600', fontSize: 14 }}>¿Ya tienes cuenta? Inicia sesión</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <View style={styles.loginForm}>
-              <View style={styles.loginInputWrap}>
-                <Text style={styles.loginInputLabel}>Teléfono</Text>
-                <TextInput value={registerForm.phone} onChangeText={(v) => setRegisterForm(p => ({ ...p, phone: v }))}
-                  style={styles.loginInput} placeholder="+56912345678" placeholderTextColor={C.textMuted}
-                  keyboardType="phone-pad" autoComplete="off" textContentType="none" />
-              </View>
-
-              <View style={styles.loginInputWrap}>
-                <Text style={styles.loginInputLabel}>RUT</Text>
-                <TextInput
-                  value={registerForm.rut}
-                  onChangeText={(v) => setRegisterForm(p => ({ ...p, rut: formatRut(v) }))}
-                  style={styles.loginInput} placeholder="12.345.678-9" placeholderTextColor={C.textMuted}
-                  autoCapitalize="characters" autoCorrect={false} maxLength={12} autoComplete="off" textContentType="none" />
-              </View>
-
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <View style={[styles.loginInputWrap, { flex: 1 }]}>
-                  <Text style={styles.loginInputLabel}>Año de nacimiento</Text>
-                  <TextInput value={registerForm.birthYear} onChangeText={(v) => setRegisterForm(p => ({ ...p, birthYear: v }))}
-                    style={styles.loginInput} placeholder="1991" placeholderTextColor={C.textMuted}
-                    keyboardType="number-pad" maxLength={4} autoComplete="off" textContentType="none" />
-                </View>
-                <View style={[styles.loginInputWrap, { flex: 1 }]}>
-                  <Text style={styles.loginInputLabel}>Sexo</Text>
-                  <TouchableOpacity
-                    style={[styles.loginInput, styles.selectInput]}
-                    onPress={() => setShowSexDropdown(v => !v)}
-                    activeOpacity={0.9}
-                  >
-                    <Text style={[styles.selectInputText, !registerForm.sex && { color: C.textMuted }]}>
-                      {registerForm.sex || 'Seleccionar'}
-                    </Text>
-                    <Text style={styles.selectChevron}>{showSexDropdown ? '▲' : '▼'}</Text>
-                  </TouchableOpacity>
-                  {showSexDropdown && (
-                    <View style={styles.selectMenu}>
-                      {SEX_OPTIONS.map(opt => (
-                        <TouchableOpacity key={opt} style={[styles.selectOption, registerForm.sex === opt && styles.selectOptionActive]}
-                          onPress={() => { setRegisterForm(p => ({ ...p, sex: opt })); setShowSexDropdown(false); }}>
-                          <Text style={[styles.selectOptionText, registerForm.sex === opt && styles.selectOptionTextActive]}>{opt}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
-                </View>
-              </View>
-
-              <View style={styles.loginInputWrap}>
-                <Text style={styles.loginInputLabel}>Comuna</Text>
-                <TouchableOpacity style={[styles.loginInput, styles.selectInput]}
-                  onPress={() => { setShowRegisterCommuneDropdown(v => !v); setRegisterCommuneSearch(''); }} activeOpacity={0.9}>
-                  <Text style={[styles.selectInputText, !registerForm.commune && { color: C.textMuted }]}>
-                    {registerForm.commune || 'Seleccionar comuna'}
-                  </Text>
-                  <Text style={styles.selectChevron}>{showRegisterCommuneDropdown ? '▲' : '▼'}</Text>
-                </TouchableOpacity>
-                {showRegisterCommuneDropdown && (
-                  <View style={[styles.selectMenu, { maxHeight: 220 }]}>
-                    <TextInput
-                      style={[styles.loginInput, { marginBottom: 4 }]}
-                      placeholder="Buscar comuna..."
-                      placeholderTextColor={C.textMuted}
-                      value={registerCommuneSearch}
-                      onChangeText={setRegisterCommuneSearch}
-                      autoCorrect={false}
-                    />
-                    <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled" style={{ maxHeight: 160 }}>
-                      {COMUNAS_CHILE.filter(c => c.toLowerCase().includes(registerCommuneSearch.toLowerCase())).map(c => (
-                        <TouchableOpacity key={c} style={[styles.selectOption, registerForm.commune === c && styles.selectOptionActive]}
-                          onPress={() => { setRegisterForm(p => ({ ...p, commune: c })); setShowRegisterCommuneDropdown(false); setRegisterCommuneSearch(''); }}>
-                          <Text style={[styles.selectOptionText, registerForm.commune === c && styles.selectOptionTextActive]}>{c}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-                  </View>
-                )}
-              </View>
-
-              <TouchableOpacity style={styles.btnPrimary} onPress={handleRegister} disabled={loading} activeOpacity={0.85}>
-                <Text style={styles.btnPrimaryText}>{loading ? 'Creando cuenta...' : 'Crear mi cuenta'}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={{ alignItems: 'center', paddingVertical: 8 }} onPress={() => setRegisterStep(1)} activeOpacity={0.85}>
-                <Text style={{ color: C.textLight, fontWeight: '600', fontSize: 14 }}>← Volver al paso anterior</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
+        <RegisterScreen
+          registerStep={registerStep} setRegisterStep={setRegisterStep}
+          registerForm={registerForm} setRegisterForm={setRegisterForm}
+          showPassword={showPassword} setShowPassword={setShowPassword}
+          showConfirmPassword={showConfirmPassword} setShowConfirmPassword={setShowConfirmPassword}
+          showSexDropdown={showSexDropdown} setShowSexDropdown={setShowSexDropdown}
+          showRegisterCommuneDropdown={showRegisterCommuneDropdown} setShowRegisterCommuneDropdown={setShowRegisterCommuneDropdown}
+          registerCommuneSearch={registerCommuneSearch} setRegisterCommuneSearch={setRegisterCommuneSearch}
+          loading={loading}
+          handleRegisterStep1={handleRegisterStep1}
+          handleRegister={handleRegister}
+          setScreen={setScreen}
+        />
       );
     }
 
     if (screen === 'Profile') {
-      const SEX_OPTIONS = ['Masculino', 'Femenino', 'Prefiero no decir'];
       return (
-        <View style={styles.form}>
-          {loading ? (
-            <ActivityIndicator color={C.primary} style={{ marginTop: 40 }} />
-          ) : (
-            <>
-              {/* Avatar iniciales */}
-              <View style={styles.profileHero}>
-                <View style={styles.profileAvatarLarge}>
-                  <Text style={styles.profileAvatarLargeText}>
-                    {profileDraft.first_name?.[0]?.toUpperCase() ?? ''}{profileDraft.last_name?.[0]?.toUpperCase() ?? ''}
-                  </Text>
-                </View>
-                {!isEditingProfile && (
-                  <Text style={styles.profileHeroName}>
-                    {profileDraft.first_name} {profileDraft.last_name}
-                  </Text>
-                )}
-                {!isEditingProfile && profileDraft.commune ? (
-                  <Text style={styles.profileHeroMeta}>{profileDraft.commune}</Text>
-                ) : null}
-              </View>
-
-              {isEditingProfile ? (
-                <>
-                  <Card title="Datos personales" accent={C.primary}>
-                    <Text style={styles.fieldLabel}>Nombre</Text>
-                    <TextInput style={styles.input} value={profileDraft.first_name}
-                      onChangeText={(v) => setProfileDraft(p => ({ ...p, first_name: v }))}
-                      placeholder="Nombre" placeholderTextColor={C.textMuted} autoCorrect={false} autoComplete="off" textContentType="none" />
-
-                    <Text style={styles.fieldLabel}>Apellido</Text>
-                    <TextInput style={styles.input} value={profileDraft.last_name}
-                      onChangeText={(v) => setProfileDraft(p => ({ ...p, last_name: v }))}
-                      placeholder="Apellido" placeholderTextColor={C.textMuted} autoCorrect={false} autoComplete="off" textContentType="none" />
-
-                    <Text style={styles.fieldLabel}>Teléfono</Text>
-                    <TextInput style={styles.input} value={profileDraft.phone}
-                      onChangeText={(v) => setProfileDraft(p => ({ ...p, phone: v }))}
-                      placeholder="+56912345678" placeholderTextColor={C.textMuted}
-                      keyboardType="phone-pad" autoComplete="off" textContentType="none" />
-
-                    <Text style={styles.fieldLabel}>RUT</Text>
-                    <TextInput style={styles.input} value={profileDraft.rut}
-                      onChangeText={(v) => setProfileDraft(p => ({ ...p, rut: formatRut(v) }))}
-                      placeholder="12.345.678-9" placeholderTextColor={C.textMuted}
-                      autoCapitalize="characters" autoCorrect={false} maxLength={12} autoComplete="off" textContentType="none" />
-
-                    <Text style={styles.fieldLabel}>Sexo</Text>
-                    <TouchableOpacity style={[styles.input, styles.selectInput]}
-                      onPress={() => setShowProfileSexDropdown(v => !v)} activeOpacity={0.9}>
-                      <Text style={[styles.selectInputText, !profileDraft.sex && { color: C.textMuted }]}>
-                        {profileDraft.sex || 'Seleccionar'}
-                      </Text>
-                      <Text style={styles.selectChevron}>{showProfileSexDropdown ? '▲' : '▼'}</Text>
-                    </TouchableOpacity>
-                    {showProfileSexDropdown && (
-                      <View style={styles.selectMenu}>
-                        {SEX_OPTIONS.map(opt => (
-                          <TouchableOpacity key={opt}
-                            style={[styles.selectOption, profileDraft.sex === opt && styles.selectOptionActive]}
-                            onPress={() => { setProfileDraft(p => ({ ...p, sex: opt })); setShowProfileSexDropdown(false); }}>
-                            <Text style={[styles.selectOptionText, profileDraft.sex === opt && styles.selectOptionTextActive]}>{opt}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    )}
-
-                    <Text style={styles.fieldLabel}>Año de nacimiento</Text>
-                    <TextInput style={styles.input} value={profileDraft.birth_year ? String(profileDraft.birth_year) : ''}
-                      onChangeText={(v) => setProfileDraft(p => ({ ...p, birth_year: parseInt(v) || 0 }))}
-                      placeholder="1991" placeholderTextColor={C.textMuted}
-                      keyboardType="number-pad" maxLength={4} autoComplete="off" textContentType="none" />
-
-                    <Text style={styles.fieldLabel}>Comuna</Text>
-                    <TouchableOpacity style={[styles.input, styles.selectInput]}
-                      onPress={() => { setShowProfileCommuneDropdown(v => !v); setCommuneSearch(''); }} activeOpacity={0.9}>
-                      <Text style={[styles.selectInputText, !profileDraft.commune && { color: C.textMuted }]}>
-                        {profileDraft.commune || 'Seleccionar comuna'}
-                      </Text>
-                      <Text style={styles.selectChevron}>{showProfileCommuneDropdown ? '▲' : '▼'}</Text>
-                    </TouchableOpacity>
-                    {showProfileCommuneDropdown && (
-                      <View style={[styles.selectMenu, { maxHeight: 200 }]}>
-                        <TextInput
-                          style={[styles.input, { marginBottom: 4 }]}
-                          placeholder="Buscar comuna..."
-                          placeholderTextColor={C.textMuted}
-                          value={communeSearch}
-                          onChangeText={setCommuneSearch}
-                          autoCorrect={false}
-                        />
-                        <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled" style={{ maxHeight: 150 }}>
-                          {COMUNAS_CHILE.filter(c => c.toLowerCase().includes(communeSearch.toLowerCase())).map(c => (
-                            <TouchableOpacity key={c} style={[styles.selectOption, profileDraft.commune === c && styles.selectOptionActive]}
-                              onPress={() => { setProfileDraft(p => ({ ...p, commune: c })); setShowProfileCommuneDropdown(false); setCommuneSearch(''); }}>
-                              <Text style={[styles.selectOptionText, profileDraft.commune === c && styles.selectOptionTextActive]}>{c}</Text>
-                            </TouchableOpacity>
-                          ))}
-                        </ScrollView>
-                      </View>
-                    )}
-                  </Card>
-
-                  <TouchableOpacity style={styles.btnPrimary} onPress={saveUserProfile} disabled={loading} activeOpacity={0.85}>
-                    <Text style={styles.btnPrimaryText}>{loading ? 'Guardando...' : 'Guardar cambios'}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={{ alignItems: 'center', paddingVertical: 8 }}
-                    onPress={() => { setIsEditingProfile(false); setShowProfileSexDropdown(false); }} activeOpacity={0.7}>
-                    <Text style={{ color: C.textLight, fontWeight: '600', fontSize: 14 }}>Cancelar</Text>
-                  </TouchableOpacity>
-                </>
-              ) : (
-                <>
-                  <Card title="Datos personales" accent={C.primary}>
-                    <InfoRow label="Nombre" value={`${profileDraft.first_name} ${profileDraft.last_name}`} />
-                    <InfoRow label="Teléfono" value={profileDraft.phone} />
-                    <InfoRow label="RUT" value={profileDraft.rut} />
-                    <InfoRow label="Sexo" value={profileDraft.sex} />
-                    <InfoRow label="Año nacimiento" value={profileDraft.birth_year ? String(profileDraft.birth_year) : null} />
-                    <InfoRow label="Comuna" value={profileDraft.commune} />
-                  </Card>
-
-                  {pendingInvitations.length > 0 && (
-                    <Card title={`Invitaciones (${pendingInvitations.length})`} accent={C.warning}>
-                      {pendingInvitations.map(inv => (
-                        <View key={inv.id} style={{ marginBottom: 14 }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                            <View style={[styles.dashCardIconWrap, { backgroundColor: C.warningLight }]}>
-                              <Text style={{ fontSize: 18 }}>{inv.pet_species === 'Gato' ? '🐱' : '🐶'}</Text>
-                            </View>
-                            <View style={{ flex: 1 }}>
-                              <Text style={{ color: C.text, fontWeight: '700', fontSize: 14 }}>{inv.pet_name}</Text>
-                              <Text style={{ color: C.textMuted, fontSize: 12 }}>
-                                Invitación de {inv.invited_by_name || inv.invited_email}
-                              </Text>
-                            </View>
-                          </View>
-                          <View style={{ flexDirection: 'row', gap: 10 }}>
-                            <TouchableOpacity
-                              style={[styles.btnPrimary, { flex: 1, paddingVertical: 10 }]}
-                              onPress={() => respondInvitation(inv.id, true)}
-                              disabled={loading}
-                              activeOpacity={0.85}>
-                              <Text style={styles.btnPrimaryText}>Aceptar</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              style={[styles.btnGhost, { flex: 1, paddingVertical: 10 }]}
-                              onPress={() => respondInvitation(inv.id, false)}
-                              disabled={loading}
-                              activeOpacity={0.7}>
-                              <Text style={styles.btnGhostText}>Rechazar</Text>
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      ))}
-                    </Card>
-                  )}
-
-                  <TouchableOpacity style={styles.btnPrimary} onPress={() => setIsEditingProfile(true)} activeOpacity={0.85}>
-                    <Text style={styles.btnPrimaryText}>Editar perfil</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.7}>
-                    <Text style={styles.logoutBtnText}>Cerrar sesión</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-            </>
-          )}
-        </View>
+        <ProfileScreen
+          loading={loading}
+          profileDraft={profileDraft} setProfileDraft={setProfileDraft}
+          isEditingProfile={isEditingProfile} setIsEditingProfile={setIsEditingProfile}
+          showProfileSexDropdown={showProfileSexDropdown} setShowProfileSexDropdown={setShowProfileSexDropdown}
+          showProfileCommuneDropdown={showProfileCommuneDropdown} setShowProfileCommuneDropdown={setShowProfileCommuneDropdown}
+          communeSearch={communeSearch} setCommuneSearch={setCommuneSearch}
+          pendingInvitations={pendingInvitations}
+          respondInvitation={respondInvitation}
+          saveUserProfile={saveUserProfile}
+          handleLogout={handleLogout}
+        />
       );
     }
 
@@ -2270,102 +1921,24 @@ export default function App() {
 
     if (screen === 'FoundTag') {
       return (
-        <View style={styles.foundWrap}>
-          <Text style={styles.foundEmoji}>🐕</Text>
-          <Text style={styles.foundTitle}>¿Encontraste a alguien?</Text>
-          <Text style={styles.foundSubtitle}>Escanea el tag NFC, el QR del collar o ingresa el código</Text>
-
-          {/* Botón NFC */}
-          <TouchableOpacity
-            style={[styles.btnPrimary, { flexDirection: 'row', justifyContent: 'center', gap: 10, paddingVertical: 16, width: '100%' }]}
-            onPress={readNfcTagForFound} activeOpacity={0.85}>
-            <Text style={{ fontSize: 22 }}>📡</Text>
-            <Text style={[styles.btnPrimaryText, { fontSize: 16 }]}>Acercar al tag NFC</Text>
-          </TouchableOpacity>
-
-          {/* Botón escanear QR */}
-          <TouchableOpacity
-            style={[styles.btnPrimary, { flexDirection: 'row', justifyContent: 'center', gap: 10, paddingVertical: 16, width: '100%', backgroundColor: C.dark }]}
-            onPress={() => { setQrScanned(false); setScreen('ScanTag'); }} activeOpacity={0.85}>
-            <Text style={{ fontSize: 22 }}>📷</Text>
-            <Text style={[styles.btnPrimaryText, { fontSize: 16 }]}>Escanear QR del collar</Text>
-          </TouchableOpacity>
-
-          {/* Divisor */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, width: '100%', marginVertical: 4 }}>
-            <View style={{ flex: 1, height: 1, backgroundColor: C.border }} />
-            <Text style={{ color: C.textMuted, fontSize: 13, fontWeight: '600' }}>o ingresa el código</Text>
-            <View style={{ flex: 1, height: 1, backgroundColor: C.border }} />
-          </View>
-
-          <TextInput
-            style={[styles.input, { width: '100%' }]}
-            placeholder="Ej: CD-A3F9K"
-            placeholderTextColor={C.textMuted}
-            value={foundCode}
-            onChangeText={setFoundCode}
-            autoCapitalize="characters"
-          />
-          <TouchableOpacity style={[styles.btnPrimary, { width: '100%', backgroundColor: C.dark }]} onPress={handleFoundLookup} disabled={loading} activeOpacity={0.85}>
-            <Text style={styles.btnPrimaryText}>{loading ? 'Buscando...' : 'Buscar mascota'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen(isLoggedIn ? 'Home' : 'Login')} activeOpacity={0.85}>
-            <Text style={styles.btnGhostText}>Volver</Text>
-          </TouchableOpacity>
-        </View>
+        <FoundTagScreen
+          foundCode={foundCode} setFoundCode={setFoundCode}
+          loading={loading} isLoggedIn={isLoggedIn}
+          handleFoundLookup={handleFoundLookup}
+          readNfcTagForFound={readNfcTagForFound}
+          setQrScanned={setQrScanned}
+          setScreen={setScreen}
+        />
       );
     }
 
     if (screen === 'FoundResult') {
       return (
-        <View style={styles.foundWrap}>
-          {foundPet ? (
-            <>
-              <Text style={styles.foundEmoji}>
-                {foundPet.is_lost ? '🚨' : '🐾'}
-              </Text>
-              {foundPet.is_lost && (
-                <View style={styles.lostAlertBanner}>
-                  <Text style={styles.lostAlertText}>Esta mascota está reportada como PERDIDA</Text>
-                </View>
-              )}
-              <Text style={styles.foundPetName}>{foundPet.public_name}</Text>
-              <Card>
-                <InfoRow label="Especie"  value={foundPet.species} />
-                {foundPet.breed ? <InfoRow label="Raza"   value={foundPet.breed} /> : null}
-                {foundPet.color ? <InfoRow label="Color"  value={foundPet.color} /> : null}
-                {foundPet.owner_name ? <InfoRow label="Dueño" value={foundPet.owner_name} /> : null}
-              </Card>
-              {foundPet.public_notes ? (
-                <Card title="Indicaciones" accent={C.warning}>
-                  <Text style={{ color: C.text, lineHeight: 20 }}>{foundPet.public_notes}</Text>
-                </Card>
-              ) : null}
-              {foundPet.contact_phone ? (
-                <TouchableOpacity style={styles.btnPrimary} onPress={() => Linking.openURL(`tel:${foundPet.contact_phone}`)} activeOpacity={0.85}>
-                  <Text style={styles.btnPrimaryText}>📞  Llamar al dueño</Text>
-                </TouchableOpacity>
-              ) : null}
-              {foundPet.contact_whatsapp ? (
-                <TouchableOpacity
-                  style={[styles.btnPrimary, { backgroundColor: '#25D366' }]}
-                  onPress={() => Linking.openURL(`https://wa.me/${foundPet.contact_whatsapp!.replace(/\D/g, '')}?text=${encodeURIComponent(`Hola, encontré a ${foundPet.public_name} 🐾`)}`)}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.btnPrimaryText}>💬  WhatsApp</Text>
-                </TouchableOpacity>
-              ) : null}
-            </>
-          ) : (
-            <Text style={{ color: C.textLight, textAlign: 'center' }}>No hay datos disponibles.</Text>
-          )}
-          <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen('FoundTag')} activeOpacity={0.85}>
-            <Text style={styles.btnGhostText}>Buscar otro tag</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen(isLoggedIn ? 'Home' : 'Login')} activeOpacity={0.85}>
-            <Text style={styles.btnGhostText}>Volver al inicio</Text>
-          </TouchableOpacity>
-        </View>
+        <FoundResultScreen
+          foundPet={foundPet}
+          isLoggedIn={isLoggedIn}
+          setScreen={setScreen}
+        />
       );
     }
 
@@ -3833,136 +3406,19 @@ export default function App() {
 
     // ── LinkTag ──
     if (screen === 'LinkTag') {
-      const tagUrl = `https://chipdog.app/tag/${linkTagCode}`;
-
-      // ── Vista: elegir método ──
-      if (linkTagMode === 'choose') {
-        return (
-          <View style={styles.form}>
-            <Card title="🏷️  Nuevo tag" accent={C.primary}>
-              <Text style={{ color: C.textLight, fontSize: 13, lineHeight: 19 }}>
-                Se generará un código único para {selectedPet?.name ?? 'tu mascota'}. Elige cómo quieres grabarlo en el tag físico.
-              </Text>
-              <View style={{ alignItems: 'center', paddingVertical: 8 }}>
-                <Text style={{ fontSize: 13, color: C.textMuted, fontWeight: '600', marginBottom: 6 }}>CÓDIGO GENERADO</Text>
-                <Text style={{ fontSize: 32, fontWeight: '900', color: C.primary, letterSpacing: 2 }}>{linkTagCode}</Text>
-                <Text style={{ fontSize: 12, color: C.textMuted, marginTop: 4 }}>{tagUrl}</Text>
-              </View>
-            </Card>
-
-            <TouchableOpacity style={[styles.btnPrimary, { flexDirection: 'row', justifyContent: 'center', gap: 10, paddingVertical: 18 }]}
-              onPress={() => setLinkTagMode('nfc')} activeOpacity={0.85}>
-              <Text style={{ fontSize: 24 }}>📡</Text>
-              <View>
-                <Text style={[styles.btnPrimaryText, { fontSize: 17 }]}>Escribir tag NFC</Text>
-                <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, textAlign: 'center' }}>Acerca el iPhone al tag</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={[styles.btnPrimary, { flexDirection: 'row', justifyContent: 'center', gap: 10, paddingVertical: 18, backgroundColor: C.dark }]}
-              onPress={() => setLinkTagMode('qr')} activeOpacity={0.85}>
-              <Text style={{ fontSize: 24 }}>📱</Text>
-              <View>
-                <Text style={[styles.btnPrimaryText, { fontSize: 17 }]}>Generar código QR</Text>
-                <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, textAlign: 'center' }}>Para imprimir o compartir</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        );
-      }
-
-      // ── Vista: NFC ──
-      if (linkTagMode === 'nfc') {
-        return (
-          <View style={styles.form}>
-            <TouchableOpacity style={styles.inlineBackBtn} onPress={() => { setNfcStatus('idle'); setNfcError(''); setLinkTagMode('choose'); }} activeOpacity={0.7}>
-              <Text style={styles.inlineBackArrow}>‹</Text>
-              <Text style={styles.inlineBackLabel}>Cambiar método</Text>
-            </TouchableOpacity>
-
-            <Card title="📡  Escribir tag NFC" accent={C.primary}>
-              <Text style={{ color: C.textMuted, fontSize: 13 }}>Código: <Text style={{ fontWeight: '800', color: C.dark }}>{linkTagCode}</Text></Text>
-
-              {/* Estado visual */}
-              <View style={{ alignItems: 'center', paddingVertical: 24, gap: 12 }}>
-                {nfcStatus === 'idle' && <Text style={{ fontSize: 60 }}>📡</Text>}
-                {nfcStatus === 'scanning' && <Text style={{ fontSize: 60 }}>⏳</Text>}
-                {nfcStatus === 'success' && <Text style={{ fontSize: 60 }}>✅</Text>}
-                {nfcStatus === 'error' && <Text style={{ fontSize: 60 }}>❌</Text>}
-
-                <Text style={{ fontSize: 17, fontWeight: '700', color: C.dark, textAlign: 'center' }}>
-                  {nfcStatus === 'idle' && 'Listo para escribir'}
-                  {nfcStatus === 'scanning' && 'Acerca el iPhone al tag NFC...'}
-                  {nfcStatus === 'success' && '¡Tag grabado correctamente!'}
-                  {nfcStatus === 'error' && 'Error al escribir el tag'}
-                </Text>
-
-                {nfcStatus === 'error' && nfcError ? (
-                  <Text style={{ color: C.danger, fontSize: 13, textAlign: 'center' }}>{nfcError}</Text>
-                ) : null}
-
-                {nfcStatus === 'success' ? (
-                  <Text style={{ color: C.textLight, fontSize: 13, textAlign: 'center' }}>
-                    El tag está vinculado a {selectedPet?.name}
-                  </Text>
-                ) : null}
-              </View>
-
-              {(nfcStatus === 'idle' || nfcStatus === 'error') && (
-                <TouchableOpacity style={styles.btnPrimary} onPress={writeNfcTag} activeOpacity={0.85}>
-                  <Text style={styles.btnPrimaryText}>
-                    {nfcStatus === 'error' ? 'Reintentar' : 'Iniciar sesión NFC'}
-                  </Text>
-                </TouchableOpacity>
-              )}
-
-              {nfcStatus === 'success' && (
-                <TouchableOpacity style={styles.btnPrimary} onPress={() => setScreen('PetDetail')} activeOpacity={0.85}>
-                  <Text style={styles.btnPrimaryText}>Volver al perfil</Text>
-                </TouchableOpacity>
-              )}
-            </Card>
-          </View>
-        );
-      }
-
-      // ── Vista: QR ──
-      if (linkTagMode === 'qr') {
-        return (
-          <View style={styles.form}>
-            <TouchableOpacity style={styles.inlineBackBtn} onPress={() => setLinkTagMode('choose')} activeOpacity={0.7}>
-              <Text style={styles.inlineBackArrow}>‹</Text>
-              <Text style={styles.inlineBackLabel}>Cambiar método</Text>
-            </TouchableOpacity>
-
-            <Card title="📱  Código QR" accent={C.dark}>
-              <Text style={{ color: C.textMuted, fontSize: 13 }}>
-                Código: <Text style={{ fontWeight: '800', color: C.dark }}>{linkTagCode}</Text>
-              </Text>
-              <View style={{ alignItems: 'center', paddingVertical: 20, gap: 14 }}>
-                <View style={{ padding: 16, backgroundColor: C.white, borderRadius: 16, shadowColor: '#000', shadowOpacity: 0.08, shadowOffset: { width: 0, height: 2 }, shadowRadius: 8, elevation: 3 }}>
-                  <QRCode value={tagUrl} size={200} color={C.dark} backgroundColor={C.white} />
-                </View>
-                <Text style={{ fontSize: 12, color: C.textMuted, textAlign: 'center', maxWidth: 260 }}>{tagUrl}</Text>
-              </View>
-              <Text style={{ fontSize: 13, color: C.textLight, lineHeight: 19, textAlign: 'center' }}>
-                Toma una captura de pantalla para imprimir este QR o compártelo directamente.{'\n'}Luego toca "Vincular" para guardarlo en el perfil de {selectedPet?.name}.
-              </Text>
-            </Card>
-
-            <TouchableOpacity style={styles.btnPrimary} onPress={async () => {
-              const ok = await saveLinkTagCode(linkTagCode);
-              if (ok) Alert.alert('Tag vinculado ✅', `Código ${linkTagCode} vinculado a ${selectedPet?.name}.`, [
-                { text: 'Volver al perfil', onPress: () => setScreen('PetDetail') }
-              ]);
-            }} disabled={loading} activeOpacity={0.85}>
-              <Text style={styles.btnPrimaryText}>{loading ? 'Vinculando...' : `Vincular QR a ${selectedPet?.name ?? 'mascota'}`}</Text>
-            </TouchableOpacity>
-          </View>
-        );
-      }
-
-      return null;
+      return (
+        <LinkTagScreen
+          linkTagCode={linkTagCode}
+          linkTagMode={linkTagMode} setLinkTagMode={setLinkTagMode}
+          nfcStatus={nfcStatus} setNfcStatus={setNfcStatus}
+          nfcError={nfcError} setNfcError={setNfcError}
+          selectedPet={selectedPet}
+          loading={loading}
+          writeNfcTag={writeNfcTag}
+          saveLinkTagCode={saveLinkTagCode}
+          setScreen={setScreen}
+        />
+      );
     }
 
     // ── ScanTag (full-screen QR scanner) ──
