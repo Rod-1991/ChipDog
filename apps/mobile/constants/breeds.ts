@@ -1,0 +1,40 @@
+export const SPECIES_OPTIONS = ['Perro', 'Gato'] as const;
+
+export const DOG_BREEDS = [
+  'Mestizo',
+  'Affenpinscher','Akita','Alaskan Malamute','American Bully','American Pit Bull Terrier',
+  'American Staffordshire Terrier','Basenji','Basset Hound','Beagle','Bedlington Terrier',
+  'Bichón Frisé','Bloodhound','Border Collie','Border Terrier','Bóxer',
+  'Boyero de Berna','Boyero de Flandes','Braco Alemán','Braco Húngaro','Bull Terrier',
+  'Bulldog Americano','Bulldog Francés','Bulldog Inglés','Bullmastiff',
+  'Cairn Terrier','Cane Corso','Cavalier King Charles Spaniel','Chihuahua',
+  'Chow Chow','Clumber Spaniel','Cocker Spaniel Americano','Cocker Spaniel Inglés',
+  'Collie','Corgi Galés','Dachshund','Dálmata','Dobermann','Dogo Argentino',
+  'Dogo de Burdeos','English Springer Spaniel','Esquimal Americano',
+  'Fila Brasileño','Fox Terrier','Galgo','Golden Retriever','Gran Danés',
+  'Greyhound','Griffón de Bruselas','Husky Siberiano','Irish Setter',
+  'Jack Russell Terrier','Labrador Retriever','Lagotto Romagnolo',
+  'Leonberger','Lhasa Apso','Lobero Irlandés','Mallorquín','Maltés',
+  'Maremano','Mastín Español','Mastín Napolitano','Mastín Tibetano',
+  'Miniature Pinscher','Mudi','Pastor Alemán','Pastor Australiano',
+  'Pastor Belga Malinois','Pastor Belga Tervueren','Pastor de Shetland',
+  'Pastor Inglés','Pequinés','Perro de Agua Español','Perro de Montaña de los Pirineos',
+  'Perro sin Pelo del Perú','Pinscher','Pointer','Pomerania','Poodle',
+  'Pug','Rhodesian Ridgeback','Rottweiler','Rough Collie','Saluki',
+  'Samoyedo','San Bernardo','Schnauzer Gigante','Schnauzer Mediano','Schnauzer Miniatura',
+  'Scottish Terrier','Shar Pei','Shiba Inu','Shih Tzu','Spitz Alemán',
+  'Staffordshire Bull Terrier','Teckel','Terranova','Vizsla',
+  'Weimaraner','Welsh Terrier','West Highland White Terrier','Whippet',
+  'Yorkshire Terrier',
+];
+
+export const CAT_BREEDS = [
+  'Mestizo',
+  'Abisinio','American Shorthair','Angora Turco','Azul Ruso',
+  'Bengalí','Birmano','Bombay','British Longhair','British Shorthair',
+  'Burmés','Chartreux','Cornish Rex','Devon Rex','Esfinge (Sphynx)',
+  'Exótico de Pelo Corto','Himalayo','Maine Coon','Manx',
+  'Mau Egipcio','Noruego del Bosque','Ocicat','Persa',
+  'Ragdoll','Savannah','Scottich Fold','Siamés',
+  'Siberiano','Singapura','Somalí','Tonkinés',
+];

@@ -17,9 +17,22 @@ import {
   Switch,
   Linking
 } from 'react-native';
-import Constants from 'expo-constants';
-import { createClient } from '@supabase/supabase-js';
 import { addPetSchema, linkTagSchema, loginSchema } from '@chipdog/shared';
+import { supabase, vetAttachmentsBucket } from './lib/supabase';
+import { C } from './constants/colors';
+import { SPECIES_OPTIONS, DOG_BREEDS, CAT_BREEDS } from './constants/breeds';
+import { COMUNAS_CHILE } from './constants/comunas';
+import {
+  autoFormatDate, normalizeStringOrNull, sanitizeFilename, initialsFromName,
+  formatBirthDate, formatBirthDateShort, buildCalendarDays, parseBirthDateText,
+  extractCodeFromUrl, generateTagCode, formatRut,
+} from './utils/helpers';
+import type {
+  Screen, Pet, PetMember, PetMemberInvitation, UserProfile,
+  FoundPet, Vaccine, LostPetPin, NearbyLostPet, VetRecord, VetAttachment,
+  InfoRowProps, CardProps,
+} from './types';
+import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { Buffer } from 'buffer';
@@ -51,273 +64,7 @@ Notifications.setNotificationHandler({
   }),
 });
 
-type Screen =
-  | 'Login'
-  | 'Register'
-  | 'Home'
-  | 'PetList'
-  | 'NearbyMap'
-  | 'LostPetList'
-  | 'LostPetDetail'
-  | 'AddPet'
-  | 'PetDetail'
-  | 'PetInfo'
-  | 'PetContact'
-  | 'PetVetHistory'
-  | 'PetVaccines'
-  | 'LinkTag'
-  | 'FoundTag'
-  | 'FoundResult'
-  | 'LostPetMap'
-  | 'ScanTag'
-  | 'Profile'
-  | 'InviteCoOwner'
-  | 'PetMembers';
-
-type PetMemberInvitation = {
-  id: number;
-  pet_id: number;
-  pet_name: string;
-  pet_species: string;
-  pet_photo_url: string | null;
-  invited_by_name: string;
-  invited_email: string;
-  created_at: string;
-};
-
-type PetMember = {
-  id: number;
-  pet_id: number;
-  user_id: string | null;
-  role: 'owner' | 'co_owner';
-  status: 'pending' | 'accepted' | 'rejected';
-  invited_email: string;
-  invited_by: string;
-};
-
-type UserProfile = {
-  id: string;
-  first_name: string;
-  last_name: string;
-  phone: string;
-  rut: string;
-  sex: string;
-  birth_year: number;
-  commune: string;
-};
-
-type Pet = {
-  id: number;
-  owner_id?: string;
-  name: string;
-  species: string;
-  breed: string | null;
-  is_lost: boolean;
-  photo_url?: string | null;
-
-  color?: string | null;
-  birth_year?: number | null;
-  birth_date_text?: string | null;
-  sex?: string | null;
-  weight_kg?: number | null;
-
-  contact_primary_name?: string | null;
-  owner_phone?: string | null;
-  contact_secondary_name?: string | null;
-  contact_secondary_phone?: string | null;
-  owner_whatsapp?: string | null;
-  public_notes?: string | null;
-
-  allergies?: string | null;
-  medications?: string | null;
-  conditions?: string | null;
-
-  vet_name?: string | null;
-  vet_phone?: string | null;
-
-  description?: string | null;
-  sterilized?: boolean | null;
-  chip_number?: string | null;
-  blood_type?: string | null;
-  insurance_name?: string | null;
-  insurance_policy?: string | null;
-
-  lost_lat?: number | null;
-  lost_lng?: number | null;
-  lost_radius_meters?: number | null;
-};
-
-type VetAttachment = {
-  id: string;
-  kind: 'photo' | 'pdf';
-  name: string;
-  path: string;
-  uri?: string;
-  mimeType?: string | null;
-};
-
-type FoundPet = {
-  public_name: string;
-  species: string;
-  breed: string | null;
-  color: string | null;
-  public_notes: string | null;
-  contact_phone: string | null;
-  contact_whatsapp: string | null;
-  photo_url: string | null;
-  is_lost: boolean;
-  owner_name: string | null;
-};
-
-type Vaccine = {
-  id: number;
-  pet_id: number;
-  vaccine_name: string;
-  applied_date: string;
-  expiry_date: string | null;
-  next_dose_date: string | null;
-  veterinarian: string | null;
-  clinic: string | null;
-  batch_number: string | null;
-  notes: string | null;
-  created_at: string;
-};
-
-type LostPetPin = {
-  id: number;
-  name: string;
-  species: string;
-  breed: string | null;
-  color: string | null;
-  photo_url: string | null;
-  lost_lat: number;
-  lost_lng: number;
-  lost_radius_meters: number | null;
-  lost_commune: string | null;
-  public_notes: string | null;
-  contact_primary_name: string | null;
-  owner_phone: string | null;
-  owner_whatsapp: string | null;
-};
-
-type NearbyLostPet = LostPetPin & { distance_m: number };
-
-type VetRecord = {
-  id: string;
-  date: string;
-  doctor: string;
-  clinic: string;
-  reason: string;
-  symptoms: string[];
-  diagnosis: string;
-  treatment: string;
-  description: string;
-  attachments: VetAttachment[];
-  referencePhotos: string[];
-};
-
-const supabaseUrl = Constants.expoConfig?.extra?.supabaseUrl;
-const supabaseAnonKey = Constants.expoConfig?.extra?.supabaseAnonKey;
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Faltan SUPABASE_URL o SUPABASE_ANON_KEY en app.config.ts');
-}
-
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
-const vetAttachmentsBucket = 'pet-vet-attachments';
-
-// ─── Design System ────────────────────────────────────────────────────────────
-const C = {
-  primary:       '#6C47FF',
-  primaryLight:  '#EDE9FE',
-  primaryDark:   '#4C1D95',
-  accent:        '#FF6B6B',
-  accentLight:   '#FFF1F2',
-  success:       '#059669',
-  successLight:  '#ECFDF5',
-  warning:       '#F59E0B',
-  warningLight:  '#FFFBEB',
-  danger:        '#EF4444',
-  dangerLight:   '#FEF2F2',
-  dark:          '#1E1B4B',
-  text:          '#374151',
-  textLight:     '#6B7280',
-  textMuted:     '#9CA3AF',
-  border:        '#E5E7EB',
-  surface:       '#F9FAFB',
-  bg:            '#F5F3FF',
-  white:         '#FFFFFF',
-};
-// ─────────────────────────────────────────────────────────────────────────────
-
-const COMUNAS_CHILE = [
-  'Alhué','Alto Hospicio','Alto Biobío','Ancud','Andacollo','Angol','Antofagasta','Antuco','Arauco',
-  'Arica','Aysén','Buin','Bulnes','Cabo de Hornos','Calama','Caldera','Calera','Calbuco','Cañete',
-  'Carahue','Cartagena','Casablanca','Castro','Catemu','Cauquenes','Chaitén','Chañaral','Chépica',
-  'Chiguayante','Chile Chico','Chillán','Chillán Viejo','Chimbarongo','Cholchol','Chonchi','Cisnes',
-  'Cobquecura','Cochamó','Coihaique','Coinco','Colbún','Colchagua','Collipulli','Coltauco','Combarbalá',
-  'Concepción','Conchalí','Constitución','Contulmo','Copiapó','Coquimbo','Coronel','Corral',
-  'Cunco','Curacautín','Curacaví','Curanilahue','Curepto','Curicó','Dalcahue','Diego de Almagro',
-  'Doñihue','El Bosque','El Carmen','El Monte','El Quisco','El Tabo','Empedrado','Ercilla',
-  'Florida','Freirina','Fresia','Frutillar','Futaleufu','Futaleufú','Galvarino','General Lagos',
-  'Graneros','Guaitecas','Hijuelas','Hualaihué','Hualañé','Hualpén','Huara','Huasco','Illapel',
-  'Independencia','Iquique','Juan Fernández','La Cisterna','La Cruz','La Estrella','La Florida',
-  'La Granja','La Higuera','La Ligua','La Pintana','La Reina','La Serena','La Unión','Lago Ranco',
-  'Lago Verde','Laguna Blanca','Laja','Lampa','Lanco','Las Condes','Lautaro','Lebu','Licantén',
-  'Limache','Linares','Lo Barnechea','Lo Espejo','Lo Prado','Lolol','Loncoche','Longaví','Lonquimay',
-  'Los Andes','Los Álamos','Los Lagos','Los Muermos','Los Sauces','Los Vilos','Lota','Lumaco',
-  'Macul','Maipú','Malloa','Mariquina','Maule','Mejillones','Melipeuco','Melipilla','Molina',
-  'Monte Patria','Mostazal','Mulchén','Nacimiento','Nancagua','Natales','Navidad','Negrete',
-  'Ninhue','Nogales','Nueva Imperial','Ñiquén','Ñuñoa','O\'Higgins','Olivar','Olmué','Osorno',
-  'Ovalle','Padre Hurtado','Padre Las Casas','Paillaco','Paine','Palena','Palmilla','Panguipulli',
-  'Parral','Pedro Aguirre Cerda','Pelarco','Pelluhue','Pemuco','Peñaflor','Peñalolén','Peralillo',
-  'Perquenco','Petorca','Peumo','Pica','Pichidegua','Pichilemu','Pilmahue','Pinto','Pirque',
-  'Pitrufquén','Placilla','Portezuelo','Porvenir','Pozo Almonte','Primavera','Providencia',
-  'Puchuncaví','Pucón','Pudahuel','Puente Alto','Puerto Montt','Puerto Natales','Puerto Octay',
-  'Puerto Varas','Punta Arenas','Purén','Purranque','Puyehue','Queilén','Quemchi','Quilaco',
-  'Quilicura','Quilleco','Quillón','Quillota','Quilpué','Quinchao','Quinta de Tilcoco','Quinta Normal',
-  'Quintero','Quirihue','Rancagua','Rauco','Recoleta','Renaico','Renca','Rengo','Requínoa',
-  'Retiro','Río Bueno','Río Claro','Río Hurtado','Río Ibáñez','Río Negro','Río Vergara',
-  'Romeral','Saavedra','San Antonio','San Bernardo','San Carlos','San Clemente','San Esteban',
-  'San Fabián','San Felipe','San Fernando','San Gregorio','San Ignacio','San Javier',
-  'San José de Maipo','San Juan de la Costa','San Miguel','San Nicolás','San Pablo','San Pedro',
-  'San Pedro de Atacama','San Pedro de la Paz','San Rafael','San Ramón','San Rosendo',
-  'San Vicente','Santa Bárbara','Santa Cruz','Santa Juana','Santa María','Santiago',
-  'Santo Domingo','Sierra Gorda','Talca','Talcahuano','Taltal','Temuco','Teno','Tierra Amarilla',
-  'Timaukel','Tirúa','Tocopilla','Toltén','Tomé','Torres del Paine','Tortel','Traiguén',
-  'Trehuaco','Tucapel','Valdivia','Vallenar','Valparaíso','Victoria','Vicuña','Vilcún',
-  'Villa Alegre','Villa Alemana','Villarrica','Viña del Mar','Vitacura','Yerbas Buenas','Yumbel','Zapallar'
-].sort();
-
-const autoFormatDate = (v: string): string => {
-  let clean = v.replace(/[^\d]/g, '');
-  if (clean.length > 2) clean = clean.slice(0, 2) + '/' + clean.slice(2);
-  if (clean.length > 5) clean = clean.slice(0, 5) + '/' + clean.slice(5);
-  if (clean.length > 10) clean = clean.slice(0, 10);
-  return clean;
-};
-
-const normalizeStringOrNull = (v: string) => {
-  const t = (v ?? '').trim();
-  return t.length ? t : null;
-};
-
-const sanitizeFilename = (name: string) =>
-  name
-    .normalize('NFKD')
-    .replace(/[^\w.\-]+/g, '_')
-    .replace(/_+/g, '_')
-    .toLowerCase();
-
-const initialsFromName = (name: string) => {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  const first = parts[0]?.[0] ?? '';
-  const second = parts[1]?.[0] ?? '';
-  return (first + second).toUpperCase() || '?';
-};
-
 // ✅ FUERA de App() para evitar re-mounts al tipear (teclado no se cierra)
-type InfoRowProps = { label: string; value?: string | null };
 const InfoRow = ({ label, value }: InfoRowProps) => (
   <View style={styles.row}>
     <Text style={styles.rowLabel}>{label}</Text>
@@ -325,7 +72,6 @@ const InfoRow = ({ label, value }: InfoRowProps) => (
   </View>
 );
 
-type CardProps = { title?: string; accent?: string; children: any };
 const Card = ({ title, accent, children }: CardProps) => (
   <View style={styles.card}>
     {title ? (
@@ -337,96 +83,6 @@ const Card = ({ title, accent, children }: CardProps) => (
     <View style={{ gap: 10 }}>{children}</View>
   </View>
 );
-
-const SPECIES_OPTIONS = ['Perro', 'Gato'] as const;
-
-const DOG_BREEDS = [
-  'Mestizo',
-  'Affenpinscher','Akita','Alaskan Malamute','American Bully','American Pit Bull Terrier',
-  'American Staffordshire Terrier','Basenji','Basset Hound','Beagle','Bedlington Terrier',
-  'Bichón Frisé','Bloodhound','Border Collie','Border Terrier','Bóxer',
-  'Boyero de Berna','Boyero de Flandes','Braco Alemán','Braco Húngaro','Bull Terrier',
-  'Bulldog Americano','Bulldog Francés','Bulldog Inglés','Bullmastiff',
-  'Cairn Terrier','Cane Corso','Cavalier King Charles Spaniel','Chihuahua',
-  'Chow Chow','Clumber Spaniel','Cocker Spaniel Americano','Cocker Spaniel Inglés',
-  'Collie','Corgi Galés','Dachshund','Dálmata','Dobermann','Dogo Argentino',
-  'Dogo de Burdeos','English Springer Spaniel','Esquimal Americano',
-  'Fila Brasileño','Fox Terrier','Galgo','Golden Retriever','Gran Danés',
-  'Greyhound','Griffón de Bruselas','Husky Siberiano','Irish Setter',
-  'Jack Russell Terrier','Labrador Retriever','Lagotto Romagnolo',
-  'Leonberger','Lhasa Apso','Lobero Irlandés','Mallorquín','Maltés',
-  'Maremano','Mastín Español','Mastín Napolitano','Mastín Tibetano',
-  'Miniature Pinscher','Mudi','Pastor Alemán','Pastor Australiano',
-  'Pastor Belga Malinois','Pastor Belga Tervueren','Pastor de Shetland',
-  'Pastor Inglés','Pequinés','Perro de Agua Español','Perro de Montaña de los Pirineos',
-  'Perro sin Pelo del Perú','Pinscher','Pointer','Pomerania','Poodle',
-  'Pug','Rhodesian Ridgeback','Rottweiler','Rough Collie','Saluki',
-  'Samoyedo','San Bernardo','Schnauzer Gigante','Schnauzer Mediano','Schnauzer Miniatura',
-  'Scottish Terrier','Shar Pei','Shiba Inu','Shih Tzu','Spitz Alemán',
-  'Staffordshire Bull Terrier','Teckel','Terranova','Vizsla',
-  'Weimaraner','Welsh Terrier','West Highland White Terrier','Whippet',
-  'Yorkshire Terrier',
-];
-
-const CAT_BREEDS = [
-  'Mestizo',
-  'Abisinio','American Shorthair','Angora Turco','Azul Ruso',
-  'Bengalí','Birmano','Bombay','British Longhair','British Shorthair',
-  'Burmés','Chartreux','Cornish Rex','Devon Rex','Esfinge (Sphynx)',
-  'Exótico de Pelo Corto','Himalayo','Maine Coon','Manx',
-  'Mau Egipcio','Noruego del Bosque','Ocicat','Persa',
-  'Ragdoll','Savannah','Scottich Fold','Siamés',
-  'Siberiano','Singapura','Somalí','Tonkinés',
-];
-
-const formatBirthDate = (date: Date) => {
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  return `${day}/${month}/${date.getFullYear()}`;
-};
-
-const formatBirthDateShort = (date: Date) => {
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const year = String(date.getFullYear()).slice(-2);
-  return `${day}/${month}/${year}`;
-};
-
-const buildCalendarDays = (date: Date) => {
-  const firstDay = new Date(date.getFullYear(), date.getMonth(), 1);
-  const firstWeekday = (firstDay.getDay() + 6) % 7;
-  const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
-  const days = [] as Array<number | null>;
-
-  for (let i = 0; i < firstWeekday; i += 1) days.push(null);
-  for (let d = 1; d <= daysInMonth; d += 1) days.push(d);
-  return days;
-};
-
-const parseBirthDateText = (input: string) => {
-  const trimmed = input.trim();
-  if (!trimmed) return null;
-  const match = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{2,4})$/);
-  if (!match) return null;
-  const day = Number(match[1]);
-  const month = Number(match[2]);
-  const rawYear = Number(match[3]);
-  const year = rawYear < 100 ? 2000 + rawYear : rawYear;
-  const asDate = new Date(year, month - 1, day);
-
-  if (
-    !Number.isFinite(day) ||
-    !Number.isFinite(month) ||
-    !Number.isFinite(year) ||
-    asDate.getFullYear() !== year ||
-    asDate.getMonth() !== month - 1 ||
-    asDate.getDate() !== day
-  ) {
-    return null;
-  }
-
-  return asDate;
-};
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('Login');

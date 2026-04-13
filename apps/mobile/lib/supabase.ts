@@ -8,3 +8,4 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+export const vetAttachmentsBucket = 'pet-vet-attachments'
