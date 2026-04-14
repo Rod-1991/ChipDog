@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Button,
   PanResponder,
   SafeAreaView,
   ScrollView,
@@ -16,14 +15,12 @@ import {
   Switch,
   Linking
 } from 'react-native';
-import { addPetSchema, linkTagSchema, loginSchema } from '@chipdog/shared';
+import { linkTagSchema, loginSchema } from '@chipdog/shared';
 import { supabase, vetAttachmentsBucket } from './lib/supabase';
 import { C } from './constants/colors';
-import { SPECIES_OPTIONS, DOG_BREEDS, CAT_BREEDS } from './constants/breeds';
 import {
   autoFormatDate, normalizeStringOrNull, sanitizeFilename, initialsFromName,
   formatBirthDate, formatBirthDateShort, buildCalendarDays, parseBirthDateText,
-  extractCodeFromUrl, generateTagCode,
 } from './utils/helpers';
 import type {
   Screen, Pet, PetMember, PetMemberInvitation, UserProfile,
@@ -38,6 +35,9 @@ import FoundTagScreen from './screens/FoundTagScreen';
 import FoundResultScreen from './screens/FoundResultScreen';
 import LinkTagScreen from './screens/LinkTagScreen';
 import ProfileScreen from './screens/ProfileScreen';
+import HomeScreen from './screens/HomeScreen';
+import AddPetScreen from './screens/AddPetScreen';
+import PetDetailScreen from './screens/PetDetailScreen';
 import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -935,14 +935,6 @@ export default function App() {
     }
   };
 
-  const formatRut = (value: string) => {
-    const clean = value.replace(/[^0-9kK]/g, '').toUpperCase();
-    if (clean.length <= 1) return clean;
-    const body = clean.slice(0, -1);
-    const dv = clean.slice(-1);
-    const formatted = body.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-    return `${formatted}-${dv}`;
-  };
 
   const handleRegisterStep1 = () => {
     const { firstName, lastName, email: regEmail, password: regPass, confirmPassword } = registerForm;
@@ -1943,88 +1935,15 @@ export default function App() {
     }
 
     if (screen === 'Home') {
-      const lostCount = allLostPets.length;
-      const rawFirst = userProfile?.first_name || userName?.split(' ')[0] || null;
-      const firstName = rawFirst
-        ? rawFirst.charAt(0).toUpperCase() + rawFirst.slice(1).toLowerCase()
-        : null;
       return (
-        <View style={styles.form}>
-          {/* Logo + nombre */}
-          <View style={styles.homeLogoRow}>
-            <Image source={require('./assets/icon.png')} style={styles.homeLogoImg} resizeMode="contain" />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.homeLogoTitle}>ChipDog</Text>
-              {firstName && <Text style={styles.homeLogoSub}>Hola, {firstName}</Text>}
-            </View>
-          </View>
-
-          {/* Alerta perdidos */}
-          {lostCount > 0 && (
-            <TouchableOpacity style={styles.nearbyAlertBanner} onPress={() => setScreen('NearbyMap')} activeOpacity={0.85}>
-              <View style={styles.nearbyAlertDot} />
-              <Text style={styles.nearbyAlertTitle}>
-                {lostCount} mascota{lostCount > 1 ? 's' : ''} perdida{lostCount > 1 ? 's' : ''} en tu área
-              </Text>
-              <Text style={styles.nearbyAlertArrow}>›</Text>
-            </TouchableOpacity>
-          )}
-
-          {/* Cards de acciones */}
-          <TouchableOpacity style={styles.dashCard} onPress={() => setScreen('PetList')} activeOpacity={0.85}>
-            <View style={[styles.dashCardIconWrap, { backgroundColor: C.primaryLight }]}>
-              <Text style={styles.dashCardIconEmoji}>🐾</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.dashCardTitle}>Mis Mascotas</Text>
-              <Text style={styles.dashCardHint}>Perfiles, vacunas e historial</Text>
-            </View>
-            <Text style={styles.dashCardArrow}>›</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.dashCard} onPress={() => setScreen('NearbyMap')} activeOpacity={0.85}>
-            <View style={[styles.dashCardIconWrap, { backgroundColor: '#FFF1F2' }]}>
-              <Text style={styles.dashCardIconEmoji}>🗺️</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.dashCardTitle}>Mapa de alertas</Text>
-              <Text style={styles.dashCardHint}>Mascotas perdidas cercanas</Text>
-            </View>
-            <Text style={styles.dashCardArrow}>›</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.dashCard} onPress={() => setScreen('FoundTag')} activeOpacity={0.85}>
-            <View style={[styles.dashCardIconWrap, { backgroundColor: C.successLight }]}>
-              <Text style={styles.dashCardIconEmoji}>🔍</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.dashCardTitle}>Escanear tag</Text>
-              <Text style={styles.dashCardHint}>Encontré una mascota</Text>
-            </View>
-            <Text style={styles.dashCardArrow}>›</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.dashCard} onPress={() => setScreen('Profile')} activeOpacity={0.85}>
-            <View style={[styles.dashCardIconWrap, { backgroundColor: C.warningLight }]}>
-              <Text style={styles.dashCardIconEmoji}>👤</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.dashCardTitle}>Mi Perfil</Text>
-              <Text style={styles.dashCardHint}>Datos personales y cuenta</Text>
-            </View>
-            {pendingInvitations.length > 0 && (
-              <View style={styles.inviteBadge}>
-                <Text style={styles.inviteBadgeText}>{pendingInvitations.length}</Text>
-              </View>
-            )}
-            <Text style={styles.dashCardArrow}>›</Text>
-          </TouchableOpacity>
-
-          {/* Cerrar sesión */}
-          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.7}>
-            <Text style={styles.logoutBtnText}>Cerrar sesión</Text>
-          </TouchableOpacity>
-        </View>
+        <HomeScreen
+          allLostPets={allLostPets}
+          userProfile={userProfile}
+          userName={userName}
+          pendingInvitations={pendingInvitations}
+          handleLogout={handleLogout}
+          setScreen={setScreen}
+        />
       );
     }
 
@@ -2096,402 +2015,41 @@ export default function App() {
     }
 
     if (screen === 'AddPet') {
-      const breedList = petForm.species === 'Perro' ? DOG_BREEDS : CAT_BREEDS;
-      const filteredBreeds = breedSearch.trim()
-        ? breedList.filter(b => b.toLowerCase().includes(breedSearch.toLowerCase()))
-        : breedList.slice(0, 8);
-      const monthDays = buildCalendarDays(calendarMonthDate);
-      const monthTitle = calendarMonthDate.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' });
-      const SEX_PET_OPTIONS = ['Macho', 'Hembra'];
-
       return (
-        <View style={styles.form}>
-          {/* Barra de progreso */}
-          <View style={styles.registerProgressBar}>
-            <View style={[styles.registerProgressFill, { width: petFormStep === 1 ? '50%' : '100%' }]} />
-          </View>
-          <Text style={{ color: C.textMuted, fontSize: 13, fontWeight: '600', textAlign: 'center' }}>
-            {petFormStep === 1 ? 'Paso 1 de 2 — Identidad' : 'Paso 2 de 2 — Más datos'}
-          </Text>
-
-          {petFormStep === 1 ? (
-            <>
-              {/* Nombre */}
-              <TextInput
-                style={styles.input}
-                placeholder="Nombre de tu mascota"
-                placeholderTextColor={C.textMuted}
-                value={petForm.name}
-                onChangeText={(v) => setPetForm((p) => ({ ...p, name: v }))}
-              />
-
-              {/* Especie */}
-              <View>
-                <TouchableOpacity style={[styles.input, styles.selectInput]} onPress={() => { setShowSpeciesDropdown(v => !v); setShowBreedDropdown(false); }} activeOpacity={0.9}>
-                  <Text style={styles.selectInputText}>{petForm.species === 'Perro' ? '🐶 Perro' : '🐱 Gato'}</Text>
-                  <Text style={styles.selectChevron}>{showSpeciesDropdown ? '▲' : '▼'}</Text>
-                </TouchableOpacity>
-                {showSpeciesDropdown && (
-                  <View style={styles.selectMenu}>
-                    {SPECIES_OPTIONS.map(opt => (
-                      <TouchableOpacity key={opt} style={[styles.selectOption, petForm.species === opt && styles.selectOptionActive]}
-                        onPress={() => { setPetForm(p => ({ ...p, species: opt, breed: '' })); setBreedSearch(''); setShowSpeciesDropdown(false); }}>
-                        <Text style={[styles.selectOptionText, petForm.species === opt && styles.selectOptionTextActive]}>
-                          {opt === 'Perro' ? '🐶 Perro' : '🐱 Gato'}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-              </View>
-
-              {/* Sexo */}
-              <View>
-                <TouchableOpacity style={[styles.input, styles.selectInput]} onPress={() => { setShowSexPetDropdown(v => !v); setShowBreedDropdown(false); }} activeOpacity={0.9}>
-                  <Text style={[styles.selectInputText, !petForm.sex && { color: C.textMuted }]}>{petForm.sex || 'Sexo'}</Text>
-                  <Text style={styles.selectChevron}>{showSexPetDropdown ? '▲' : '▼'}</Text>
-                </TouchableOpacity>
-                {showSexPetDropdown && (
-                  <View style={styles.selectMenu}>
-                    {SEX_PET_OPTIONS.map(opt => (
-                      <TouchableOpacity key={opt} style={[styles.selectOption, petForm.sex === opt && styles.selectOptionActive]}
-                        onPress={() => { setPetForm(p => ({ ...p, sex: opt })); setShowSexPetDropdown(false); }}>
-                        <Text style={[styles.selectOptionText, petForm.sex === opt && styles.selectOptionTextActive]}>{opt}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-              </View>
-
-              {/* Raza con autocomplete */}
-              <View>
-                <View style={[styles.input, styles.selectInput, { paddingVertical: 0, paddingHorizontal: 0, overflow: 'hidden' }]}>
-                  <TextInput
-                    style={{ flex: 1, paddingVertical: 13, paddingHorizontal: 14, fontSize: 15, color: C.dark, fontWeight: '500' }}
-                    placeholder="Buscar raza (ej: border, persa...)"
-                    placeholderTextColor={C.textMuted}
-                    value={breedSearch || petForm.breed}
-                    onChangeText={(v) => { setBreedSearch(v); setPetForm(p => ({ ...p, breed: '' })); setShowBreedDropdown(true); }}
-                    onFocus={() => setShowBreedDropdown(true)}
-                  />
-                  {petForm.breed ? (
-                    <TouchableOpacity onPress={() => { setPetForm(p => ({ ...p, breed: '' })); setBreedSearch(''); setShowBreedDropdown(true); }} style={{ paddingHorizontal: 12 }}>
-                      <Text style={{ color: C.textMuted, fontSize: 18 }}>✕</Text>
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
-                {showBreedDropdown && (
-                  <View style={[styles.selectMenu, { maxHeight: 220 }]}>
-                    {/* Mestizo siempre primero y destacado */}
-                    {!breedSearch && (
-                      <TouchableOpacity style={[styles.selectOption, { backgroundColor: C.primaryLight }]}
-                        onPress={() => { setPetForm(p => ({ ...p, breed: 'Mestizo' })); setBreedSearch(''); setShowBreedDropdown(false); }}>
-                        <Text style={[styles.selectOptionText, { color: C.primary, fontWeight: '800' }]}>⭐ Mestizo</Text>
-                      </TouchableOpacity>
-                    )}
-                    <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled" style={{ maxHeight: 180 }}>
-                      {filteredBreeds.filter(b => b !== 'Mestizo').map(b => (
-                        <TouchableOpacity key={b} style={[styles.selectOption, petForm.breed === b && styles.selectOptionActive]}
-                          onPress={() => { setPetForm(p => ({ ...p, breed: b })); setBreedSearch(''); setShowBreedDropdown(false); }}>
-                          <Text style={[styles.selectOptionText, petForm.breed === b && styles.selectOptionTextActive]}>{b}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-                  </View>
-                )}
-              </View>
-
-              {/* Fecha de nacimiento */}
-              <View>
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <TextInput
-                    style={[styles.input, { flex: 1 }]}
-                    placeholder="dd/mm/aaaa (opcional)"
-                    placeholderTextColor={C.textMuted}
-                    value={birthDateText}
-                    onChangeText={(v) => {
-                      // Solo dígitos y barras
-                      let clean = v.replace(/[^\d]/g, '');
-                      // Auto-formato dd/mm/aaaa
-                      if (clean.length > 2) clean = clean.slice(0, 2) + '/' + clean.slice(2);
-                      if (clean.length > 5) clean = clean.slice(0, 5) + '/' + clean.slice(5);
-                      if (clean.length > 10) clean = clean.slice(0, 10);
-                      setBirthDateText(clean);
-                      // Parsear cuando esté completo
-                      const match = clean.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-                      if (match) {
-                        const d = parseInt(match[1]), m = parseInt(match[2]), y = parseInt(match[3]);
-                        const date = new Date(y, m - 1, d);
-                        if (date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d) {
-                          setPetBirthDate(date);
-                          setCalendarMonthDate(date);
-                        } else {
-                          setPetBirthDate(null);
-                        }
-                      } else {
-                        setPetBirthDate(null);
-                      }
-                    }}
-                    keyboardType="number-pad"
-                    maxLength={10}
-                  />
-                  <TouchableOpacity style={[styles.input, { paddingHorizontal: 14 }]} onPress={() => { setShowBirthCalendar(v => !v); setShowBreedDropdown(false); }}>
-                    <Text style={{ fontSize: 20 }}>{showBirthCalendar ? '▲' : '📅'}</Text>
-                  </TouchableOpacity>
-                </View>
-                {showBirthCalendar && (
-                  <View style={styles.calendarCard}>
-                    <View style={styles.calendarHeader}>
-                      <TouchableOpacity style={styles.calendarArrowBtn} onPress={() => setCalendarMonthDate(c => new Date(c.getFullYear(), c.getMonth() - 1, 1))}>
-                        <Text style={styles.calendarArrowText}>‹</Text>
-                      </TouchableOpacity>
-                      <Text style={styles.calendarMonthTitle}>{monthTitle}</Text>
-                      <TouchableOpacity style={styles.calendarArrowBtn} onPress={() => setCalendarMonthDate(c => new Date(c.getFullYear(), c.getMonth() + 1, 1))}>
-                        <Text style={styles.calendarArrowText}>›</Text>
-                      </TouchableOpacity>
-                    </View>
-                    <View style={styles.calendarWeekRow}>
-                      {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map(d => <Text key={d} style={styles.calendarWeekDay}>{d}</Text>)}
-                    </View>
-                    <View style={styles.calendarGrid}>
-                      {monthDays.map((day, idx) => {
-                        const isSelected = day != null && petBirthDate != null &&
-                          petBirthDate.getFullYear() === calendarMonthDate.getFullYear() &&
-                          petBirthDate.getMonth() === calendarMonthDate.getMonth() &&
-                          petBirthDate.getDate() === day;
-                        return (
-                          <TouchableOpacity key={`${day ?? 'e'}-${idx}`} disabled={day == null}
-                            style={[styles.calendarDayBtn, day == null && styles.calendarDayBtnDisabled, isSelected && styles.calendarDayBtnSelected]}
-                            onPress={() => { if (!day) return; const d = new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth(), day); setPetBirthDate(d); setBirthDateText(formatBirthDate(d)); setShowBirthCalendar(false); }}>
-                            <Text style={[styles.calendarDayText, isSelected && styles.calendarDayTextSelected]}>{day ?? ''}</Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  </View>
-                )}
-              </View>
-
-              <TouchableOpacity style={styles.btnPrimary} onPress={() => {
-                if (!petForm.name.trim()) { Alert.alert('Campo requerido', 'El nombre es obligatorio.'); return; }
-                setPetFormStep(2); setShowBreedDropdown(false);
-              }} activeOpacity={0.85}>
-                <Text style={styles.btnPrimaryText}>Continuar →</Text>
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              {/* Descripción física */}
-              <View>
-                <Text style={styles.fieldLabel}>Descripción física *</Text>
-                <TextInput
-                  style={[styles.input, styles.multiline]}
-                  placeholder='Ej: "Blanco con manchas café en el lomo, orejas negras"'
-                  placeholderTextColor={C.textMuted}
-                  value={petForm.description}
-                  onChangeText={(v) => setPetForm(p => ({ ...p, description: v }))}
-                  multiline
-                />
-              </View>
-
-              {/* Peso */}
-              <View>
-                <Text style={styles.fieldLabel}>Peso aproximado (kg)</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Ej: 8.5"
-                  placeholderTextColor={C.textMuted}
-                  value={petForm.weight_kg}
-                  onChangeText={(v) => setPetForm(p => ({ ...p, weight_kg: v }))}
-                  keyboardType="decimal-pad"
-                />
-              </View>
-
-              {/* Esterilizado */}
-              <View style={[styles.card, { paddingVertical: 14 }]}>
-                <View style={styles.switchRow}>
-                  <Text style={styles.switchLabel}>✂️  Esterilizado/a</Text>
-                  <Switch
-                    value={petForm.sterilized}
-                    onValueChange={(v) => setPetForm(p => ({ ...p, sterilized: v }))}
-                    trackColor={{ false: C.border, true: C.primary }}
-                    thumbColor={C.white}
-                  />
-                </View>
-              </View>
-
-              {/* Número de chip */}
-              <View>
-                <Text style={styles.fieldLabel}>Número de chip / microchip</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Ej: 985112345678901"
-                  placeholderTextColor={C.textMuted}
-                  value={petForm.chip_number}
-                  onChangeText={(v) => setPetForm(p => ({ ...p, chip_number: v }))}
-                  keyboardType="number-pad"
-                />
-                <Text style={{ fontSize: 12, color: C.textMuted, marginTop: 4, marginLeft: 2 }}>
-                  El número está en el certificado de vacunas o lo entrega el veterinario.
-                </Text>
-              </View>
-
-              <TouchableOpacity style={styles.btnPrimary} onPress={handleCreatePet} disabled={loading} activeOpacity={0.85}>
-                <Text style={styles.btnPrimaryText}>{loading ? 'Guardando...' : '🐾 Agregar mascota'}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={{ alignItems: 'center', paddingVertical: 8 }} onPress={() => setPetFormStep(1)} activeOpacity={0.85}>
-                <Text style={{ color: C.textLight, fontWeight: '600', fontSize: 14 }}>← Volver al paso anterior</Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
+        <AddPetScreen
+          petForm={petForm} setPetForm={setPetForm}
+          petFormStep={petFormStep} setPetFormStep={setPetFormStep}
+          petBirthDate={petBirthDate} setPetBirthDate={setPetBirthDate}
+          birthDateText={birthDateText} setBirthDateText={setBirthDateText}
+          calendarMonthDate={calendarMonthDate} setCalendarMonthDate={setCalendarMonthDate}
+          showBirthCalendar={showBirthCalendar} setShowBirthCalendar={setShowBirthCalendar}
+          showSpeciesDropdown={showSpeciesDropdown} setShowSpeciesDropdown={setShowSpeciesDropdown}
+          showBreedDropdown={showBreedDropdown} setShowBreedDropdown={setShowBreedDropdown}
+          showSexPetDropdown={showSexPetDropdown} setShowSexPetDropdown={setShowSexPetDropdown}
+          breedSearch={breedSearch} setBreedSearch={setBreedSearch}
+          loading={loading}
+          handleCreatePet={handleCreatePet}
+          setScreen={setScreen}
+        />
       );
     }
 
     if (screen === 'PetDetail') {
-      if (!selectedPet) {
-        return (
-          <View style={styles.form}>
-            <Text>No hay mascota seleccionada.</Text>
-            <Button title="Volver" onPress={() => setScreen('PetList')} />
-          </View>
-        );
-      }
-
-      const statusLabel = selectedPet.is_lost ? 'Perdido' : 'En casa';
-      const badgeStyle = selectedPet.is_lost ? styles.badgeDanger : styles.badgeOk;
-      const badgeTextStyle = selectedPet.is_lost ? styles.badgeTextDanger : styles.badgeTextOk;
-
       return (
-        <View style={{ gap: 16 }}>
-          {/* Botón atrás */}
-          <TouchableOpacity style={styles.inlineBackBtn} onPress={() => setScreen('PetList')} activeOpacity={0.7}>
-            <Text style={styles.inlineBackArrow}>‹</Text>
-            <Text style={styles.inlineBackLabel}>Mis Mascotas</Text>
-          </TouchableOpacity>
-
-          {/* Hero */}
-          <View style={styles.petHero}>
-            <TouchableOpacity
-              style={styles.petHeroAvatarWrap}
-              onPress={() => pickAndUploadPetPhoto(selectedPet.id)}
-              disabled={loading}
-              activeOpacity={0.85}
-            >
-              {petPhotoSignedUrl ? (
-                <Image source={{ uri: petPhotoSignedUrl }} style={styles.petHeroAvatar} resizeMode="cover" />
-              ) : (
-                <View style={[styles.petHeroAvatar, styles.avatarPlaceholder]}>
-                  <Text style={[styles.avatarInitials, { fontSize: 36 }]}>{initialsFromName(selectedPet.name)}</Text>
-                </View>
-              )}
-              <View style={styles.petHeroCameraBtn}>
-                <Text style={{ fontSize: 14 }}>📷</Text>
-              </View>
-            </TouchableOpacity>
-
-            <Text style={styles.petHeroName}>{selectedPet.name}</Text>
-            <Text style={styles.petHeroBreed}>
-              {selectedPet.species}{selectedPet.breed ? ` · ${selectedPet.breed}` : ''}
-            </Text>
-            <View style={[styles.badge, badgeStyle, { alignSelf: 'center', marginTop: 6 }]}>
-              <Text style={[styles.badgeText, badgeTextStyle]}>{selectedPet.is_lost ? '🚨 Perdido' : '🏠 En casa'}</Text>
-            </View>
-          </View>
-
-          {/* Switch perdido — solo dueño */}
-          {(!selectedPet.owner_id || !userId || selectedPet.owner_id === userId) && (
-          <Card>
-            <View style={styles.switchRow}>
-              <Text style={styles.switchLabel}>🚨  Activar modo perdido</Text>
-              <Switch
-                value={selectedPet.is_lost}
-                onValueChange={(v) => v ? openLostMap() : updatePetLostStatus(selectedPet.id, false)}
-                disabled={loading}
-                trackColor={{ false: C.border, true: C.danger }}
-                thumbColor={C.white}
-              />
-            </View>
-            {selectedPet.is_lost && (
-              <TouchableOpacity onPress={openLostMap} style={{ marginTop: 8 }}>
-                <Text style={{ color: C.primary, fontWeight: '700', fontSize: 13 }}>
-                  📍 Editar ubicación y radio
-                </Text>
-              </TouchableOpacity>
-            )}
-          </Card>
-          )}
-
-          {/* Nav grid 2x2 */}
-          <View style={styles.navGrid}>
-            <TouchableOpacity style={[styles.navGridCard, { borderTopColor: C.primary }]} onPress={() => setScreen('PetVetHistory')} activeOpacity={0.85}>
-              <Text style={styles.navGridIcon}>🏥</Text>
-              <Text style={styles.navGridTitle}>Historial Vet</Text>
-              <Text style={styles.navGridHint}>Visitas y controles</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={[styles.navGridCard, { borderTopColor: C.success }]} onPress={() => setScreen('PetVaccines')} activeOpacity={0.85}>
-              <Text style={styles.navGridIcon}>💉</Text>
-              <Text style={styles.navGridTitle}>Vacunas</Text>
-              <Text style={styles.navGridHint}>Cartilla al día</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={[styles.navGridCard, { borderTopColor: C.warning }]} onPress={() => { setIsEditingPetDetail(false); setScreen('PetInfo'); }} activeOpacity={0.85}>
-              <Text style={styles.navGridIcon}>ℹ️</Text>
-              <Text style={styles.navGridTitle}>Información</Text>
-              <Text style={styles.navGridHint}>Perfil completo</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={[styles.navGridCard, { borderTopColor: C.accent }]} onPress={() => { setIsEditingPetDetail(false); setScreen('PetContact'); }} activeOpacity={0.85}>
-              <Text style={styles.navGridIcon}>📞</Text>
-              <Text style={styles.navGridTitle}>Contacto</Text>
-              <Text style={styles.navGridHint}>Dueño y emergencias</Text>
-            </TouchableOpacity>
-          </View>
-
-          {(!selectedPet?.owner_id || !userId || selectedPet.owner_id === userId) && (
-            <TouchableOpacity style={styles.btnPrimary} onPress={() => setScreen('LinkTag')} activeOpacity={0.85}>
-              <Text style={styles.btnPrimaryText}>🏷️  Vincular tag NFC / QR</Text>
-            </TouchableOpacity>
-          )}
-
-          {(!selectedPet?.owner_id || !userId || selectedPet.owner_id === userId) && (
-            <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: C.dark }]} onPress={() => setScreen('PetMembers')} activeOpacity={0.85}>
-              <Text style={styles.btnPrimaryText}>👥  Co-dueños</Text>
-            </TouchableOpacity>
-          )}
-
-          <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen('Home')} activeOpacity={0.85}>
-            <Text style={styles.btnGhostText}>← Volver a mis mascotas</Text>
-          </TouchableOpacity>
-
-          {selectedPet?.owner_id === userId && (
-            <TouchableOpacity
-              style={{ alignItems: 'center', paddingVertical: 10 }}
-              onPress={() => {
-                Alert.alert(
-                  'Eliminar mascota',
-                  `¿Estás seguro que quieres eliminar a ${selectedPet.name}? Esta acción no se puede deshacer.`,
-                  [
-                    { text: 'Cancelar', style: 'cancel' },
-                    { text: 'Eliminar', style: 'destructive', onPress: async () => {
-                      setLoading(true);
-                      try {
-                        const { error } = await supabase.from('pets').delete().eq('id', selectedPet.id);
-                        if (error) { Alert.alert('Error', error.message); return; }
-                        setSelectedPet(null);
-                        await fetchPets();
-                        setScreen('Home');
-                      } finally { setLoading(false); }
-                    }}
-                  ]
-                );
-              }}
-              activeOpacity={0.7}>
-              <Text style={{ color: C.danger, fontWeight: '600', fontSize: 14 }}>Eliminar mascota</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+        <PetDetailScreen
+          selectedPet={selectedPet}
+          petPhotoSignedUrl={petPhotoSignedUrl}
+          userId={userId}
+          loading={loading}
+          setLoading={setLoading}
+          setSelectedPet={setSelectedPet}
+          pickAndUploadPetPhoto={pickAndUploadPetPhoto}
+          openLostMap={openLostMap}
+          updatePetLostStatus={updatePetLostStatus}
+          setIsEditingPetDetail={setIsEditingPetDetail}
+          fetchPets={fetchPets}
+          setScreen={setScreen}
+        />
       );
     }
 
