@@ -8,17 +8,15 @@ import {
   KeyboardAvoidingView,
   Platform,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
-  Image,
-  Linking
+  Linking,
 } from 'react-native';
 import { linkTagSchema, loginSchema } from '@chipdog/shared';
 import { supabase, vetAttachmentsBucket } from './lib/supabase';
 import { C } from './constants/colors';
 import {
-  normalizeStringOrNull, sanitizeFilename, initialsFromName,
+  normalizeStringOrNull, sanitizeFilename,
   formatBirthDate, parseBirthDateText,
 } from './utils/helpers';
 import type {
@@ -26,8 +24,6 @@ import type {
   FoundPet, Vaccine, LostPetPin, NearbyLostPet, VetRecord, VetAttachment,
 } from './types';
 import { styles } from './styles';
-import InfoRow from './components/InfoRow';
-import Card from './components/Card';
 import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
 import FoundTagScreen from './screens/FoundTagScreen';
@@ -42,6 +38,13 @@ import PetInfoScreen from './screens/PetInfoScreen';
 import PetContactScreen from './screens/PetContactScreen';
 import PetVetHistoryScreen from './screens/PetVetHistoryScreen';
 import PetVaccinesScreen from './screens/PetVaccinesScreen';
+import LostPetMapScreen from './screens/LostPetMapScreen';
+import NearbyMapScreen from './screens/NearbyMapScreen';
+import LostPetListScreen from './screens/LostPetListScreen';
+import LostPetDetailScreen from './screens/LostPetDetailScreen';
+import PetMembersScreen from './screens/PetMembersScreen';
+import InviteCoOwnerScreen from './screens/InviteCoOwnerScreen';
+import ScanTagScreen from './screens/ScanTagScreen';
 import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -49,8 +52,8 @@ import { Buffer } from 'buffer';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import * as Location from 'expo-location';
-import MapView, { Circle, Marker } from 'react-native-maps';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import MapView from 'react-native-maps';
+import { useCameraPermissions } from 'expo-camera';
 
 // NFC: carga dinámica — no disponible en Expo Go
 let NfcManager: any = null;
@@ -1830,88 +1833,27 @@ export default function App() {
     }
 
     if (screen === 'PetMembers') {
-      const accepted = petMembers.filter(m => m.status === 'accepted');
-      const pending  = petMembers.filter(m => m.status === 'pending');
       return (
-        <View style={styles.form}>
-          <TouchableOpacity style={styles.btnPrimary} onPress={() => { setInviteEmail(''); setScreen('InviteCoOwner'); }} activeOpacity={0.85}>
-            <Text style={styles.btnPrimaryText}>+ Invitar co-dueño</Text>
-          </TouchableOpacity>
-
-          {accepted.length > 0 && (
-            <Card title="Co-dueños activos" accent={C.success}>
-              {accepted.map(m => (
-                <View key={m.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <View style={[styles.dashCardIconWrap, { backgroundColor: C.successLight }]}>
-                    <Text style={{ fontSize: 18 }}>👤</Text>
-                  </View>
-                  <Text style={{ flex: 1, color: C.text, fontWeight: '600', fontSize: 14 }}>{m.invited_email}</Text>
-                  <TouchableOpacity onPress={() => removeCoOwner(m.id)} activeOpacity={0.7}>
-                    <Text style={{ color: C.danger, fontWeight: '700', fontSize: 13 }}>Eliminar</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </Card>
-          )}
-
-          {pending.length > 0 && (
-            <Card title="Invitaciones pendientes" accent={C.warning}>
-              {pending.map(m => (
-                <View key={m.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <View style={[styles.dashCardIconWrap, { backgroundColor: C.warningLight }]}>
-                    <Text style={{ fontSize: 18 }}>⏳</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ color: C.text, fontWeight: '600', fontSize: 14 }}>{m.invited_email}</Text>
-                    <Text style={{ color: C.textMuted, fontSize: 12 }}>Pendiente de aceptar</Text>
-                  </View>
-                  <TouchableOpacity onPress={() => removeCoOwner(m.id)} activeOpacity={0.7}>
-                    <Text style={{ color: C.danger, fontWeight: '700', fontSize: 13 }}>Cancelar</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </Card>
-          )}
-
-          {petMembers.length === 0 && !loading && (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyStateEmoji}>👥</Text>
-              <Text style={styles.emptyStateTitle}>Sin co-dueños</Text>
-              <Text style={styles.emptyStateHint}>Invita a alguien para compartir el cuidado de {selectedPet?.name}.</Text>
-            </View>
-          )}
-        </View>
+        <PetMembersScreen
+          petMembers={petMembers}
+          selectedPet={selectedPet}
+          loading={loading}
+          removeCoOwner={removeCoOwner}
+          setInviteEmail={setInviteEmail}
+          setScreen={setScreen}
+        />
       );
     }
 
     if (screen === 'InviteCoOwner') {
       return (
-        <View style={styles.form}>
-          <Card title={`Invitar co-dueño para ${selectedPet?.name}`} accent={C.primary}>
-            <Text style={{ color: C.textLight, fontSize: 13, lineHeight: 18 }}>
-              El co-dueño podrá ver y editar el perfil, vacunas e historial veterinario de {selectedPet?.name}.
-              Recibirá un email con la invitación.
-            </Text>
-          </Card>
-
-          <Card>
-            <Text style={styles.fieldLabel}>Email del co-dueño</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="correo@ejemplo.com"
-              placeholderTextColor={C.textMuted}
-              value={inviteEmail}
-              onChangeText={setInviteEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              autoCorrect={false}
-            />
-          </Card>
-
-          <TouchableOpacity style={styles.btnPrimary} onPress={sendCoOwnerInvite} disabled={loading} activeOpacity={0.85}>
-            <Text style={styles.btnPrimaryText}>{loading ? 'Enviando...' : 'Enviar invitación'}</Text>
-          </TouchableOpacity>
-        </View>
+        <InviteCoOwnerScreen
+          selectedPet={selectedPet}
+          inviteEmail={inviteEmail}
+          setInviteEmail={setInviteEmail}
+          loading={loading}
+          sendCoOwnerInvite={sendCoOwnerInvite}
+        />
       );
     }
 
@@ -2070,288 +2012,49 @@ export default function App() {
     }
 
     if (screen === 'LostPetMap') {
-      const RADIUS_OPTIONS = [100, 250, 500, 1000, 2000];
-      const defaultRegion = {
-        latitude:      lostPin?.lat ?? -33.4489,
-        longitude:     lostPin?.lng ?? -70.6693,
-        latitudeDelta:  lostPin ? (lostRadius / 50000) * 2 : 0.02,
-        longitudeDelta: lostPin ? (lostRadius / 50000) * 2 : 0.02,
-      };
-
       return (
-        <View style={styles.form}>
-          {/* Instrucción */}
-          <View style={styles.lostMapTip}>
-            <Text style={styles.lostMapTipText}>
-              {lostPin
-                ? '📍 Arrastra el pin o toca el mapa para mover la ubicación'
-                : '👆 Toca el mapa para marcar dónde se perdió tu mascota'}
-            </Text>
-          </View>
-
-          {/* Mapa */}
-          <View style={styles.lostMapWrap}>
-            <MapView
-              style={{ flex: 1 }}
-              initialRegion={defaultRegion}
-              onPress={(e) => setLostPin({
-                lat: e.nativeEvent.coordinate.latitude,
-                lng: e.nativeEvent.coordinate.longitude,
-              })}
-              showsUserLocation
-              showsMyLocationButton
-            >
-              {lostPin && (
-                <>
-                  <Marker
-                    coordinate={{ latitude: lostPin.lat, longitude: lostPin.lng }}
-                    draggable
-                    onDragEnd={(e) => setLostPin({
-                      lat: e.nativeEvent.coordinate.latitude,
-                      lng: e.nativeEvent.coordinate.longitude,
-                    })}
-                    title={selectedPet?.name ?? 'Mascota'}
-                    description="Arrastra para ajustar"
-                  />
-                  <Circle
-                    center={{ latitude: lostPin.lat, longitude: lostPin.lng }}
-                    radius={lostRadius}
-                    fillColor="rgba(108,71,255,0.12)"
-                    strokeColor="rgba(108,71,255,0.5)"
-                    strokeWidth={2}
-                  />
-                </>
-              )}
-            </MapView>
-          </View>
-
-          {/* Selector de radio */}
-          <View style={styles.card}>
-            <Text style={[styles.cardHeader, { marginBottom: 12 }]}>Radio de búsqueda</Text>
-            <View style={styles.lostRadiusRow}>
-              {RADIUS_OPTIONS.map((r) => (
-                <TouchableOpacity
-                  key={r}
-                  style={[styles.lostRadiusBtn, lostRadius === r && styles.lostRadiusBtnActive]}
-                  onPress={() => setLostRadius(r)}
-                  activeOpacity={0.85}
-                >
-                  <Text style={[styles.lostRadiusBtnText, lostRadius === r && styles.lostRadiusBtnTextActive]}>
-                    {r >= 1000 ? `${r / 1000}km` : `${r}m`}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
-          {/* Botones */}
-          <TouchableOpacity
-            style={[styles.btnPrimary, !lostPin && { opacity: 0.5 }]}
-            onPress={saveLostLocation}
-            disabled={loading || !lostPin}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.btnPrimaryText}>
-              {loading ? 'Publicando...' : '🚨 Publicar alerta de búsqueda'}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen('PetDetail')} activeOpacity={0.85}>
-            <Text style={styles.btnGhostText}>Cancelar</Text>
-          </TouchableOpacity>
-        </View>
+        <LostPetMapScreen
+          lostPin={lostPin} setLostPin={setLostPin}
+          lostRadius={lostRadius} setLostRadius={setLostRadius}
+          selectedPet={selectedPet}
+          loading={loading}
+          saveLostLocation={saveLostLocation}
+          setScreen={setScreen}
+        />
       );
     }
 
     if (screen === 'NearbyMap') {
-      const initialRegion = { latitude: -33.4489, longitude: -70.6693, latitudeDelta: 0.12, longitudeDelta: 0.12 };
-
       return (
-        <View style={{ flex: 1, gap: 0 }}>
-          {/* Header compacto */}
-          <View style={[styles.homeHeader, { margin: 16, marginBottom: 8 }]}>
-            <Text style={styles.homeHeaderEyebrow}>🗺  Mapa de perdidos</Text>
-            <Text style={styles.homeHeaderTitle}>
-              {allLostPets.length === 0 ? 'Sin reportes activos' : `${allLostPets.length} reportes activos`}
-            </Text>
-            <Text style={styles.homeHeaderSubtitle}>Toca un pin para ver la ficha de la mascota</Text>
-          </View>
-
-          {/* Mapa full */}
-          <View style={{ flex: 1, marginHorizontal: 16, borderRadius: 20, overflow: 'hidden' }}>
-            <MapView
-              ref={nearbyMapRef}
-              style={{ flex: 1 }}
-              initialRegion={initialRegion}
-              showsUserLocation
-              showsMyLocationButton
-            >
-              {allLostPets.map((pet) => (
-                <Marker
-                  key={pet.id}
-                  coordinate={{ latitude: pet.lost_lat, longitude: pet.lost_lng }}
-                  title={`🚨 ${pet.name}`}
-                  description={`${pet.species}${pet.breed ? ` · ${pet.breed}` : ''}${pet.lost_commune ? ` · ${pet.lost_commune}` : ''}`}
-                  pinColor="#EF4444"
-                  onCalloutPress={() => { setSelectedLostPet(pet); setScreen('LostPetDetail'); }}
-                />
-              ))}
-            </MapView>
-          </View>
-
-          {/* Botones */}
-          <View style={{ padding: 16, gap: 10 }}>
-            <TouchableOpacity
-              style={[styles.btnPrimary, { backgroundColor: C.accent }]}
-              onPress={() => setScreen('LostPetList')}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.btnPrimaryText}>📋  Ver lista completa</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen('Home')} activeOpacity={0.85}>
-              <Text style={styles.btnGhostText}>Volver al inicio</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        <NearbyMapScreen
+          allLostPets={allLostPets}
+          nearbyMapRef={nearbyMapRef}
+          setSelectedLostPet={setSelectedLostPet}
+          setScreen={setScreen}
+        />
       );
     }
 
     if (screen === 'LostPetList') {
-      const communes = ['Todas', ...Array.from(new Set(allLostPets.map(p => p.lost_commune).filter(Boolean) as string[])).sort()];
-      const speciesOptions: Array<'Todos' | 'Perro' | 'Gato'> = ['Todos', 'Perro', 'Gato'];
-
-      const filtered = allLostPets.filter(p => {
-        if (lostListSpecies !== 'Todos' && p.species !== lostListSpecies) return false;
-        if (lostListCommune !== 'Todas' && p.lost_commune !== lostListCommune) return false;
-        return true;
-      });
-
       return (
-        <View style={styles.form}>
-          {/* Filtro especie */}
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {speciesOptions.map(s => (
-              <TouchableOpacity
-                key={s}
-                style={[styles.filterChip, lostListSpecies === s && styles.filterChipActive]}
-                onPress={() => setLostListSpecies(s)}
-                activeOpacity={0.85}
-              >
-                <Text style={[styles.filterChipText, lostListSpecies === s && styles.filterChipTextActive]}>
-                  {s === 'Todos' ? '🐾 Todos' : s === 'Perro' ? '🐶 Perros' : '🐱 Gatos'}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Filtro comuna */}
-          {communes.length > 1 && (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -16, paddingHorizontal: 16 }}>
-              <View style={{ flexDirection: 'row', gap: 8, paddingRight: 8 }}>
-                {communes.map(c => (
-                  <TouchableOpacity
-                    key={c}
-                    style={[styles.filterChip, lostListCommune === c && styles.filterChipActive]}
-                    onPress={() => setLostListCommune(c)}
-                    activeOpacity={0.85}
-                  >
-                    <Text style={[styles.filterChipText, lostListCommune === c && styles.filterChipTextActive]}>{c}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-          )}
-
-          <Text style={{ color: C.textLight, fontSize: 13, fontWeight: '600' }}>
-            {filtered.length} mascota{filtered.length !== 1 ? 's' : ''} encontrada{filtered.length !== 1 ? 's' : ''}
-          </Text>
-
-          {filtered.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyStateEmoji}>🎉</Text>
-              <Text style={styles.emptyStateTitle}>Sin resultados</Text>
-              <Text style={styles.emptyStateHint}>Prueba cambiando los filtros.</Text>
-            </View>
-          ) : (
-            filtered.map(pet => (
-              <TouchableOpacity
-                key={pet.id}
-                style={styles.petCard}
-                activeOpacity={0.85}
-                onPress={() => { setSelectedLostPet(pet); setScreen('LostPetDetail'); }}
-              >
-                <View style={styles.petCardPhotoWrap}>
-                  {lostPetSignedUrls[pet.id] ? (
-                    <Image source={{ uri: lostPetSignedUrls[pet.id]! }} style={styles.petCardPhoto} resizeMode="cover" />
-                  ) : (
-                    <View style={[styles.petCardPhoto, styles.avatarPlaceholder]}>
-                      <Text style={styles.avatarInitials}>{initialsFromName(pet.name)}</Text>
-                    </View>
-                  )}
-                </View>
-                <View style={{ flex: 1, gap: 3 }}>
-                  <Text style={styles.petCardName}>{pet.name}</Text>
-                  <Text style={styles.petCardBreed}>{pet.species}{pet.breed ? ` · ${pet.breed}` : ''}</Text>
-                  {pet.lost_commune && <Text style={{ fontSize: 12, color: C.textLight, fontWeight: '600' }}>📍 {pet.lost_commune}</Text>}
-                </View>
-                <Text style={styles.petCardArrow}>›</Text>
-              </TouchableOpacity>
-            ))
-          )}
-        </View>
+        <LostPetListScreen
+          allLostPets={allLostPets}
+          lostListSpecies={lostListSpecies} setLostListSpecies={setLostListSpecies}
+          lostListCommune={lostListCommune} setLostListCommune={setLostListCommune}
+          lostPetSignedUrls={lostPetSignedUrls}
+          setSelectedLostPet={setSelectedLostPet}
+          setScreen={setScreen}
+        />
       );
     }
 
     if (screen === 'LostPetDetail' && selectedLostPet) {
-      const pet = selectedLostPet;
       return (
-        <View style={styles.form}>
-          {/* Hero */}
-          <View style={styles.petHero}>
-            {lostPetPhotoUrl ? (
-              <Image source={{ uri: lostPetPhotoUrl }} style={styles.petHeroAvatar} resizeMode="cover" />
-            ) : (
-              <View style={[styles.petHeroAvatar, styles.avatarPlaceholder]}>
-                <Text style={[styles.avatarInitials, { fontSize: 32 }]}>{initialsFromName(pet.name)}</Text>
-              </View>
-            )}
-            <Text style={styles.petHeroName}>{pet.name}</Text>
-            <Text style={styles.petHeroBreed}>{pet.species}{pet.breed ? ` · ${pet.breed}` : ''}</Text>
-            <View style={[styles.badge, styles.badgeDanger, { marginTop: 4 }]}>
-              <Text style={[styles.badgeText, styles.badgeTextDanger]}>🚨 Perdido</Text>
-            </View>
-          </View>
-
-          <Card>
-            {pet.color      && <InfoRow label="Color"   value={pet.color} />}
-            {pet.lost_commune && <InfoRow label="Comuna" value={pet.lost_commune} />}
-            {pet.contact_primary_name && <InfoRow label="Dueño" value={pet.contact_primary_name} />}
-          </Card>
-
-          {pet.public_notes && (
-            <Card title="Indicaciones" accent={C.warning}>
-              <Text style={{ color: C.text, lineHeight: 20 }}>{pet.public_notes}</Text>
-            </Card>
-          )}
-
-          {pet.owner_phone && (
-            <TouchableOpacity
-              style={styles.btnPrimary}
-              onPress={() => Linking.openURL(`tel:${pet.owner_phone}`)}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.btnPrimaryText}>📞  Llamar al dueño</Text>
-            </TouchableOpacity>
-          )}
-
-
-          <TouchableOpacity style={styles.btnGhost} onPress={() => setScreen('LostPetList')} activeOpacity={0.85}>
-            <Text style={styles.btnGhostText}>Volver a la lista</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.btnGhost, { marginTop: 4 }]} onPress={() => setScreen('NearbyMap')} activeOpacity={0.85}>
-            <Text style={styles.btnGhostText}>Volver al mapa</Text>
-          </TouchableOpacity>
-        </View>
+        <LostPetDetailScreen
+          selectedLostPet={selectedLostPet}
+          lostPetPhotoUrl={lostPetPhotoUrl}
+          setScreen={setScreen}
+        />
       );
     }
 
@@ -2374,49 +2077,18 @@ export default function App() {
 
     // ── ScanTag (full-screen QR scanner) ──
     if (screen === 'ScanTag') {
-      if (!cameraPermission?.granted) {
-        return (
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16, padding: 32, backgroundColor: C.dark }}>
-            <Text style={{ fontSize: 48 }}>📷</Text>
-            <Text style={{ color: C.white, fontSize: 17, fontWeight: '700', textAlign: 'center' }}>ChipDog necesita acceso a la cámara</Text>
-            <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, textAlign: 'center' }}>Para escanear el QR del tag de la mascota.</Text>
-            <TouchableOpacity style={styles.btnPrimary} onPress={requestCameraPermission} activeOpacity={0.85}>
-              <Text style={styles.btnPrimaryText}>Permitir acceso</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setScreen('FoundTag')} activeOpacity={0.7}>
-              <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14 }}>Cancelar</Text>
-            </TouchableOpacity>
-          </View>
-        );
-      }
       return (
-        <View style={{ flex: 1, backgroundColor: '#000' }}>
-          <CameraView
-            style={{ flex: 1 }}
-            facing="back"
-            barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-            onBarcodeScanned={qrScanned ? undefined : ({ data }) => {
-              setQrScanned(true);
-              const code = extractCodeFromUrl(data);
-              setFoundCode(code);
-              lookupTagCode(code);
-            }}
-          />
-          {/* Marco guía */}
-          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', pointerEvents: 'none' }}>
-            <View style={{ width: 240, height: 240, borderRadius: 20, borderWidth: 3, borderColor: C.primary, backgroundColor: 'transparent' }} />
-            <Text style={{ color: C.white, marginTop: 20, fontSize: 15, fontWeight: '600', textShadowColor: '#000', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 }}>
-              Apunta al QR del tag
-            </Text>
-          </View>
-          {/* Botón cancelar */}
-          <TouchableOpacity
-            style={{ position: 'absolute', top: 20, left: 20, backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 6 }}
-            onPress={() => { setQrScanned(false); setScreen('FoundTag'); }} activeOpacity={0.85}>
-            <Text style={{ color: C.white, fontSize: 20, lineHeight: 24 }}>‹</Text>
-            <Text style={{ color: C.white, fontWeight: '700', fontSize: 14 }}>Cancelar</Text>
-          </TouchableOpacity>
-        </View>
+        <ScanTagScreen
+          cameraPermission={cameraPermission}
+          requestCameraPermission={requestCameraPermission}
+          qrScanned={qrScanned} setQrScanned={setQrScanned}
+          onBarcodeScanned={(data) => {
+            const code = extractCodeFromUrl(data);
+            setFoundCode(code);
+            lookupTagCode(code);
+          }}
+          setScreen={setScreen}
+        />
       );
     }
 
