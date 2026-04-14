@@ -12,15 +12,14 @@ import {
   TouchableOpacity,
   View,
   Image,
-  Switch,
   Linking
 } from 'react-native';
 import { linkTagSchema, loginSchema } from '@chipdog/shared';
 import { supabase, vetAttachmentsBucket } from './lib/supabase';
 import { C } from './constants/colors';
 import {
-  autoFormatDate, normalizeStringOrNull, sanitizeFilename, initialsFromName,
-  formatBirthDate, formatBirthDateShort, buildCalendarDays, parseBirthDateText,
+  normalizeStringOrNull, sanitizeFilename, initialsFromName,
+  formatBirthDate, parseBirthDateText,
 } from './utils/helpers';
 import type {
   Screen, Pet, PetMember, PetMemberInvitation, UserProfile,
@@ -38,6 +37,11 @@ import ProfileScreen from './screens/ProfileScreen';
 import HomeScreen from './screens/HomeScreen';
 import AddPetScreen from './screens/AddPetScreen';
 import PetDetailScreen from './screens/PetDetailScreen';
+import PetListScreen from './screens/PetListScreen';
+import PetInfoScreen from './screens/PetInfoScreen';
+import PetContactScreen from './screens/PetContactScreen';
+import PetVetHistoryScreen from './screens/PetVetHistoryScreen';
+import PetVaccinesScreen from './screens/PetVaccinesScreen';
 import Constants from 'expo-constants';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -1949,68 +1953,12 @@ export default function App() {
 
     if (screen === 'PetList') {
       return (
-        <View style={styles.form}>
-          {/* Header */}
-          <View style={styles.homeHeader}>
-            <TouchableOpacity style={styles.inlineBackBtn} onPress={() => setScreen('Home')} activeOpacity={0.7}>
-              <Text style={styles.inlineBackArrow}>‹</Text>
-              <Text style={styles.inlineBackLabel}>Inicio</Text>
-            </TouchableOpacity>
-            <Text style={styles.homeHeaderTitle}>Mis Mascotas</Text>
-            <Text style={styles.homeHeaderSubtitle}>Todo sobre tu mascota, siempre contigo.</Text>
-          </View>
-
-          {/* CTA agregar */}
-          <TouchableOpacity style={styles.addPetCta} onPress={() => setScreen('AddPet')} activeOpacity={0.85}>
-            <Text style={styles.addPetCtaText}>+  Agregar mascota</Text>
-          </TouchableOpacity>
-
-          {/* Lista de mascotas */}
-          {pets.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyStateEmoji}>🐶</Text>
-              <Text style={styles.emptyStateTitle}>Aún no tienes mascotas</Text>
-              <Text style={styles.emptyStateHint}>Agrega a tu peludo y empieza a cuidarlo como se merece.</Text>
-            </View>
-          ) : (
-            pets.map((pet) => (
-              <TouchableOpacity
-                key={pet.id}
-                onPress={async () => {
-                  await loadPetDetail(pet.id);
-                  setScreen('PetDetail');
-                }}
-                style={styles.petCard}
-                activeOpacity={0.85}
-              >
-                <View style={styles.petCardPhotoWrap}>
-                  {petSignedUrls[pet.id] ? (
-                    <Image source={{ uri: petSignedUrls[pet.id] ?? undefined }} style={styles.petCardPhoto} resizeMode="cover" />
-                  ) : (
-                    <View style={[styles.petCardPhoto, styles.avatarPlaceholder]}>
-                      <Text style={styles.avatarInitials}>{initialsFromName(pet.name)}</Text>
-                    </View>
-                  )}
-                  {pet.is_lost && <View style={styles.petCardLostDot} />}
-                </View>
-
-                <View style={{ flex: 1, gap: 3 }}>
-                  <Text style={styles.petCardName}>{pet.name}</Text>
-                  <Text style={styles.petCardBreed}>
-                    {pet.species}{pet.breed ? ` · ${pet.breed}` : ''}
-                  </Text>
-                  <View style={[styles.badge, pet.is_lost ? styles.badgeDanger : styles.badgeOk, { alignSelf: 'flex-start', marginTop: 2 }]}>
-                    <Text style={[styles.badgeText, pet.is_lost ? styles.badgeTextDanger : styles.badgeTextOk]}>
-                      {pet.is_lost ? '🚨 Perdido' : '🏠 En casa'}
-                    </Text>
-                  </View>
-                </View>
-
-                <Text style={styles.petCardArrow}>›</Text>
-              </TouchableOpacity>
-            ))
-          )}
-        </View>
+        <PetListScreen
+          pets={pets}
+          petSignedUrls={petSignedUrls}
+          loadPetDetail={loadPetDetail}
+          setScreen={setScreen}
+        />
       );
     }
 
@@ -2054,625 +2002,70 @@ export default function App() {
     }
 
     if (screen === 'PetVetHistory') {
-
-      // ── VISTA FORMULARIO (nuevo / editar) ──
-      if (vetView === 'form') {
-        return (
-          <View style={styles.form}>
-            <Card title="🏥  Visita" accent={C.primary}>
-              <Text style={styles.fieldLabel}>Fecha *</Text>
-              <TextInput style={styles.input} placeholder="dd/mm/aaaa"
-                placeholderTextColor={C.textMuted}
-                value={vetForm.date}
-                onChangeText={(v) => setVetForm((p) => ({ ...p, date: autoFormatDate(v) }))}
-                keyboardType="number-pad" maxLength={10} />
-
-              <Text style={styles.fieldLabel}>Motivo de la consulta *</Text>
-              <TextInput style={styles.input} placeholder='Ej: "Control general", "Vómitos"'
-                placeholderTextColor={C.textMuted}
-                value={vetForm.reason}
-                onChangeText={(v) => setVetForm((p) => ({ ...p, reason: v }))} />
-
-              <Text style={styles.fieldLabel}>Veterinario</Text>
-              <TextInput style={styles.input} placeholder="Dr. Nombre Apellido"
-                placeholderTextColor={C.textMuted}
-                value={vetForm.doctor}
-                onChangeText={(v) => setVetForm((p) => ({ ...p, doctor: v }))} />
-
-              <Text style={styles.fieldLabel}>Clínica</Text>
-              <TextInput style={styles.input} placeholder="Nombre de la clínica"
-                placeholderTextColor={C.textMuted}
-                value={vetForm.clinic}
-                onChangeText={(v) => setVetForm((p) => ({ ...p, clinic: v }))} />
-            </Card>
-
-            <Card title="🩺  Clínico" accent={C.success}>
-              <Text style={styles.fieldLabel}>Síntomas</Text>
-              <TextInput style={[styles.input, styles.multiline]} multiline
-                placeholder="Ej: Vómitos, letargo, fiebre (separados por coma)"
-                placeholderTextColor={C.textMuted}
-                value={symptomText}
-                onChangeText={setSymptomText} />
-
-              <Text style={styles.fieldLabel}>Diagnóstico</Text>
-              <TextInput style={[styles.input, styles.multiline]} multiline
-                placeholder='Ej: "Gastroenteritis leve"'
-                placeholderTextColor={C.textMuted}
-                value={vetForm.diagnosis}
-                onChangeText={(v) => setVetForm((p) => ({ ...p, diagnosis: v }))} />
-
-              <Text style={styles.fieldLabel}>Tratamiento indicado</Text>
-              <TextInput style={[styles.input, styles.multiline]} multiline
-                placeholder="Indicaciones del veterinario"
-                placeholderTextColor={C.textMuted}
-                value={vetForm.treatment}
-                onChangeText={(v) => setVetForm((p) => ({ ...p, treatment: v }))} />
-
-              <Text style={styles.fieldLabel}>Resumen / notas adicionales</Text>
-              <TextInput style={[styles.input, styles.multiline]} multiline
-                placeholder="Cualquier detalle importante de la visita"
-                placeholderTextColor={C.textMuted}
-                value={vetForm.description}
-                onChangeText={(v) => setVetForm((p) => ({ ...p, description: v }))} />
-            </Card>
-
-            <Card title="📎  Adjuntos" accent={C.accent}>
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <TouchableOpacity style={[styles.btnPrimary, { flex: 1, paddingVertical: 10 }]} onPress={addPhotoAttachmentToForm} activeOpacity={0.85}>
-                  <Text style={styles.btnPrimaryText}>📷  Foto</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.btnPrimary, { flex: 1, paddingVertical: 10, backgroundColor: C.dark }]} onPress={addPdfAttachmentToForm} activeOpacity={0.85}>
-                  <Text style={styles.btnPrimaryText}>📄  PDF</Text>
-                </TouchableOpacity>
-              </View>
-              {vetForm.attachments.length > 0 && (
-                <View style={{ gap: 8, marginTop: 4 }}>{vetForm.attachments.map(renderEditableAttachmentChip)}</View>
-              )}
-            </Card>
-
-            <TouchableOpacity style={styles.btnPrimary} onPress={saveVetRecord} disabled={loading} activeOpacity={0.85}>
-              <Text style={styles.btnPrimaryText}>{loading ? 'Guardando...' : (editingVetRecordId ? 'Guardar cambios' : 'Guardar registro')}</Text>
-            </TouchableOpacity>
-
-            {editingVetRecordId ? (
-              <TouchableOpacity
-                style={{ backgroundColor: C.dangerLight, borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}
-                onPress={deleteVetRecord} disabled={loading} activeOpacity={0.85}>
-                <Text style={{ color: C.danger, fontWeight: '700', fontSize: 15 }}>Eliminar registro</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-        );
-      }
-
-      // ── VISTA DETALLE ──
-      if (vetView === 'detail' && selectedVetRecord) {
-        const rec = selectedVetRecord;
-        return (
-          <View style={styles.form}>
-            <Card title="🏥  Visita" accent={C.primary}>
-              <InfoRow label="Fecha" value={rec.date} />
-              <InfoRow label="Motivo" value={rec.reason} />
-              <InfoRow label="Veterinario" value={rec.doctor} />
-              <InfoRow label="Clínica" value={rec.clinic} />
-            </Card>
-
-            <Card title="🩺  Clínico" accent={C.success}>
-              <InfoRow label="Síntomas" value={rec.symptoms.length ? rec.symptoms.join(', ') : null} />
-              <InfoRow label="Diagnóstico" value={rec.diagnosis} />
-              <InfoRow label="Tratamiento" value={rec.treatment} />
-              {rec.description ? (
-                <>
-                  <Text style={[styles.rowLabel, { marginTop: 4 }]}>Resumen</Text>
-                  <Text style={{ color: C.text, lineHeight: 20 }}>{rec.description}</Text>
-                </>
-              ) : null}
-            </Card>
-
-            <Card title="📎  Adjuntos" accent={C.accent}>
-              {rec.attachments.length ? (
-                <View style={{ gap: 8 }}>{rec.attachments.map(renderAttachmentChip)}</View>
-              ) : (
-                <Text style={{ color: C.textMuted }}>Sin adjuntos</Text>
-              )}
-            </Card>
-          </View>
-        );
-      }
-
-      // ── VISTA LISTA ──
       return (
-        <View style={styles.form}>
-          <TouchableOpacity style={styles.addPetCta} onPress={() => { resetVetForm(); setVetView('form'); }} activeOpacity={0.85}>
-            <Text style={styles.addPetCtaText}>+  Nuevo registro</Text>
-          </TouchableOpacity>
-
-          {vetHistory.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyStateEmoji}>🩺</Text>
-              <Text style={styles.emptyStateTitle}>Sin registros todavía</Text>
-              <Text style={styles.emptyStateHint}>Cada visita al veterinario quedará guardada aquí.</Text>
-            </View>
-          ) : (
-            vetHistory.map((record) => (
-              <TouchableOpacity key={record.id} style={styles.vetHistoryCard}
-                onPress={() => { setSelectedVetRecord(record); setVetView('detail'); }}
-                activeOpacity={0.85}>
-                <View style={styles.vetHistoryDateBadge}>
-                  <Text style={styles.vetHistoryDateText}>{record.date}</Text>
-                </View>
-                <View style={{ flex: 1, gap: 3 }}>
-                  <Text style={styles.vetHistoryReason}>{record.reason}</Text>
-                  {(record.doctor || record.clinic) ? (
-                    <Text style={styles.vetHistoryMeta}>
-                      {[record.doctor, record.clinic].filter(Boolean).join(' · ')}
-                    </Text>
-                  ) : null}
-                  {record.symptoms.length > 0 && (
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
-                      {record.symptoms.slice(0, 3).map(s => (
-                        <View key={s} style={{ backgroundColor: C.successLight, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2 }}>
-                          <Text style={{ fontSize: 11, color: C.success, fontWeight: '600' }}>{s}</Text>
-                        </View>
-                      ))}
-                      {record.symptoms.length > 3 && (
-                        <View style={{ backgroundColor: C.surface, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2 }}>
-                          <Text style={{ fontSize: 11, color: C.textMuted, fontWeight: '600' }}>+{record.symptoms.length - 3}</Text>
-                        </View>
-                      )}
-                    </View>
-                  )}
-                </View>
-                <Text style={styles.petCardArrow}>›</Text>
-              </TouchableOpacity>
-            ))
-          )}
-        </View>
+        <PetVetHistoryScreen
+          vetView={vetView} setVetView={setVetView}
+          vetHistory={vetHistory}
+          selectedVetRecord={selectedVetRecord} setSelectedVetRecord={setSelectedVetRecord}
+          vetForm={vetForm} setVetForm={setVetForm}
+          symptomText={symptomText} setSymptomText={setSymptomText}
+          editingVetRecordId={editingVetRecordId}
+          loading={loading}
+          saveVetRecord={saveVetRecord}
+          deleteVetRecord={deleteVetRecord}
+          resetVetForm={resetVetForm}
+          addPhotoAttachmentToForm={addPhotoAttachmentToForm}
+          addPdfAttachmentToForm={addPdfAttachmentToForm}
+          renderEditableAttachmentChip={renderEditableAttachmentChip}
+          renderAttachmentChip={renderAttachmentChip}
+        />
       );
     }
 
     if (screen === 'PetVaccines') {
-
-      // ── FORMULARIO (nueva / editar) ──
-      if (showVaccineForm) {
-        return (
-          <View style={styles.form}>
-            <Card title="💉  Vacuna" accent={C.primary}>
-              <Text style={styles.fieldLabel}>Nombre de la vacuna *</Text>
-              <TextInput style={styles.input} placeholder='Ej: "Antirrábica", "Polivalente"'
-                placeholderTextColor={C.textMuted}
-                value={vaccineForm.vaccine_name}
-                onChangeText={(v) => setVaccineForm((p) => ({ ...p, vaccine_name: v }))} />
-
-              <Text style={styles.fieldLabel}>Fecha de aplicación *</Text>
-              <TextInput style={styles.input} placeholder="dd/mm/aaaa"
-                placeholderTextColor={C.textMuted}
-                value={vaccineForm.applied_date}
-                onChangeText={(v) => setVaccineForm((p) => ({ ...p, applied_date: autoFormatDate(v) }))}
-                keyboardType="number-pad" maxLength={10} />
-            </Card>
-
-            <Card title="📅  Fechas de control" accent={C.success}>
-              <Text style={styles.fieldLabel}>Fecha de vencimiento</Text>
-              <TextInput style={styles.input} placeholder="dd/mm/aaaa"
-                placeholderTextColor={C.textMuted}
-                value={vaccineForm.expiry_date}
-                onChangeText={(v) => setVaccineForm((p) => ({ ...p, expiry_date: autoFormatDate(v) }))}
-                keyboardType="number-pad" maxLength={10} />
-
-              <Text style={styles.fieldLabel}>Próxima dosis</Text>
-              <TextInput style={styles.input} placeholder="dd/mm/aaaa"
-                placeholderTextColor={C.textMuted}
-                value={vaccineForm.next_dose_date}
-                onChangeText={(v) => setVaccineForm((p) => ({ ...p, next_dose_date: autoFormatDate(v) }))}
-                keyboardType="number-pad" maxLength={10} />
-            </Card>
-
-            <Card title="🏥  Clínica" accent={C.accent}>
-              <Text style={styles.fieldLabel}>Veterinario</Text>
-              <TextInput style={styles.input} placeholder="Dr. Nombre Apellido"
-                placeholderTextColor={C.textMuted}
-                value={vaccineForm.veterinarian}
-                onChangeText={(v) => setVaccineForm((p) => ({ ...p, veterinarian: v }))} />
-
-              <Text style={styles.fieldLabel}>Clínica</Text>
-              <TextInput style={styles.input} placeholder="Nombre de la clínica"
-                placeholderTextColor={C.textMuted}
-                value={vaccineForm.clinic}
-                onChangeText={(v) => setVaccineForm((p) => ({ ...p, clinic: v }))} />
-
-              <Text style={styles.fieldLabel}>N° de lote</Text>
-              <TextInput style={styles.input} placeholder="Ej: AB1234"
-                placeholderTextColor={C.textMuted}
-                value={vaccineForm.batch_number}
-                onChangeText={(v) => setVaccineForm((p) => ({ ...p, batch_number: v }))} />
-            </Card>
-
-            <Card title="📝  Notas" accent={C.warning}>
-              <TextInput style={[styles.input, styles.multiline]} multiline
-                placeholder="Observaciones adicionales"
-                placeholderTextColor={C.textMuted}
-                value={vaccineForm.notes}
-                onChangeText={(v) => setVaccineForm((p) => ({ ...p, notes: v }))} />
-            </Card>
-
-            <TouchableOpacity style={styles.btnPrimary} onPress={saveVaccine} disabled={loading} activeOpacity={0.85}>
-              <Text style={styles.btnPrimaryText}>{loading ? 'Guardando...' : (editingVaccineId ? 'Guardar cambios' : 'Registrar vacuna')}</Text>
-            </TouchableOpacity>
-
-            {editingVaccineId ? (
-              <TouchableOpacity
-                style={{ backgroundColor: C.dangerLight, borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}
-                onPress={() => deleteVaccine(editingVaccineId)} disabled={loading} activeOpacity={0.85}>
-                <Text style={{ color: C.danger, fontWeight: '700', fontSize: 15 }}>Eliminar vacuna</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-        );
-      }
-
-      // ── LISTA ──
       return (
-        <View style={styles.form}>
-          <TouchableOpacity style={styles.addPetCta}
-            onPress={() => { resetVaccineForm(); setShowVaccineForm(true); setEditingVaccineId(null); }}
-            activeOpacity={0.85}>
-            <Text style={styles.addPetCtaText}>+  Registrar vacuna</Text>
-          </TouchableOpacity>
-
-          {vaccines.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyStateEmoji}>💉</Text>
-              <Text style={styles.emptyStateTitle}>Sin vacunas registradas</Text>
-              <Text style={styles.emptyStateHint}>Registra las vacunas de {selectedPet?.name ?? 'tu mascota'} para mantenerlas al día.</Text>
-            </View>
-          ) : (
-            vaccines.map((v) => {
-              const status = vaccineStatus(v);
-              return (
-                <TouchableOpacity key={v.id} style={styles.vaccineCard}
-                  onPress={() => startEditVaccine(v)} activeOpacity={0.85}>
-                  {/* Barra de color estado */}
-                  <View style={[styles.vaccineStatusBar, { backgroundColor: status.color }]} />
-                  <View style={{ flex: 1, gap: 5 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <Text style={styles.vaccineCardName}>{v.vaccine_name}</Text>
-                      <View style={[styles.vaccineBadge, { backgroundColor: status.color + '22' }]}>
-                        <Text style={[styles.vaccineBadgeText, { color: status.color }]}>{status.label}</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.vaccineCardDate}>Aplicada: {v.applied_date}</Text>
-                    {v.expiry_date ? <Text style={styles.vaccineCardDate}>Vence: {v.expiry_date}</Text> : null}
-                    {v.next_dose_date ? <Text style={styles.vaccineCardDate}>Próxima dosis: {v.next_dose_date}</Text> : null}
-                    {(v.veterinarian || v.clinic) ? (
-                      <Text style={styles.vaccineCardMeta}>{[v.veterinarian, v.clinic].filter(Boolean).join(' · ')}</Text>
-                    ) : null}
-                  </View>
-                  <Text style={styles.petCardArrow}>›</Text>
-                </TouchableOpacity>
-              );
-            })
-          )}
-        </View>
+        <PetVaccinesScreen
+          selectedPet={selectedPet}
+          vaccines={vaccines}
+          showVaccineForm={showVaccineForm} setShowVaccineForm={setShowVaccineForm}
+          editingVaccineId={editingVaccineId} setEditingVaccineId={setEditingVaccineId}
+          vaccineForm={vaccineForm} setVaccineForm={setVaccineForm}
+          loading={loading}
+          saveVaccine={saveVaccine}
+          deleteVaccine={deleteVaccine}
+          resetVaccineForm={resetVaccineForm}
+          startEditVaccine={startEditVaccine}
+          vaccineStatus={vaccineStatus}
+        />
       );
     }
 
     if (screen === 'PetInfo') {
-      if (!selectedPet) return null;
-      const SEX_PET_INFO = ['Macho', 'Hembra'];
-      const BLOOD_TYPES = ['DEA 1.1+', 'DEA 1.1-', 'DEA 1.2+', 'DEA 1.2-', 'No sé'];
-
-      if (!isEditingPetDetail) {
-        // ── Vista de solo lectura ──
-        return (
-          <View style={styles.form}>
-            <Card title="📋  Identidad" accent={C.primary}>
-              <InfoRow label="Sexo" value={petDraft.sex} />
-              <InfoRow label="Fecha de nacimiento" value={petDraft.birth_date_text} />
-              <InfoRow label="Peso" value={petDraft.weight_kg ? `${petDraft.weight_kg} kg` : null} />
-              <InfoRow label="Esterilizado/a" value={petDraft.sterilized ? 'Sí' : 'No'} />
-              <InfoRow label="N° de chip / microchip" value={petDraft.chip_number} />
-            </Card>
-
-            <Card title="🐾  Descripción física" accent={C.accent}>
-              <Text style={{ color: petDraft.description ? C.text : C.textMuted, lineHeight: 20 }}>
-                {petDraft.description || '—'}
-              </Text>
-            </Card>
-
-            <Card title="🩺  Salud" accent={C.success}>
-              <InfoRow label="Alergias" value={petDraft.allergies} />
-              <InfoRow label="Medicamentos" value={petDraft.medications} />
-              <InfoRow label="Condiciones" value={petDraft.conditions} />
-              <InfoRow label="Grupo sanguíneo" value={petDraft.blood_type} />
-            </Card>
-
-            <Card title="🛡️  Seguro veterinario" accent={C.warning}>
-              <InfoRow label="Seguro" value={petDraft.insurance_name} />
-              <InfoRow label="N° de póliza" value={petDraft.insurance_policy} />
-            </Card>
-          </View>
-        );
-      }
-
-      // ── Vista de edición ──
       return (
-        <View style={styles.form}>
-
-          {/* ── Identidad ── */}
-          <Card title="📋  Identidad" accent={C.primary}>
-            <Text style={styles.fieldLabel}>Sexo</Text>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              {SEX_PET_INFO.map(opt => (
-                <TouchableOpacity key={opt}
-                  style={[styles.filterChip, { flex: 1, alignItems: 'center' }, petDraft.sex === opt && styles.filterChipActive]}
-                  onPress={() => setPetDraft(p => ({ ...p, sex: opt }))}>
-                  <Text style={[styles.filterChipText, petDraft.sex === opt && styles.filterChipTextActive]}>{opt}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <Text style={styles.fieldLabel}>Fecha de nacimiento</Text>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <TextInput
-                style={[styles.input, { flex: 1 }]}
-                placeholder="dd/mm/aaaa"
-                placeholderTextColor={C.textMuted}
-                value={petDraft.birth_date_text}
-                keyboardType="number-pad"
-                maxLength={10}
-                onChangeText={(v) => {
-                  let clean = v.replace(/[^\d]/g, '');
-                  if (clean.length > 2) clean = clean.slice(0, 2) + '/' + clean.slice(2);
-                  if (clean.length > 5) clean = clean.slice(0, 5) + '/' + clean.slice(5);
-                  if (clean.length > 10) clean = clean.slice(0, 10);
-                  setPetDraft(p => ({ ...p, birth_date_text: clean }));
-                }}
-              />
-              <TouchableOpacity style={[styles.input, { paddingHorizontal: 14 }]} onPress={() => setShowProfileBirthCalendar(v => !v)}>
-                <Text style={{ fontSize: 20 }}>{showProfileBirthCalendar ? '▲' : '📅'}</Text>
-              </TouchableOpacity>
-            </View>
-            {showProfileBirthCalendar && (
-              <View style={styles.calendarCard}>
-                <View style={styles.calendarHeader}>
-                  <TouchableOpacity style={styles.calendarArrowBtn} onPress={() => setProfileBirthCalendarMonth(p => new Date(p.getFullYear(), p.getMonth() - 1, 1))}>
-                    <Text style={styles.calendarArrowText}>‹</Text>
-                  </TouchableOpacity>
-                  <Text style={styles.calendarMonthTitle}>{profileBirthCalendarMonth.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })}</Text>
-                  <TouchableOpacity style={styles.calendarArrowBtn} onPress={() => setProfileBirthCalendarMonth(p => new Date(p.getFullYear(), p.getMonth() + 1, 1))}>
-                    <Text style={styles.calendarArrowText}>›</Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.calendarWeekRow}>
-                  {['L','M','X','J','V','S','D'].map(d => <Text key={d} style={styles.calendarWeekDay}>{d}</Text>)}
-                </View>
-                <View style={styles.calendarGrid}>
-                  {buildCalendarDays(profileBirthCalendarMonth).map((day, idx) => {
-                    const selectedDate = parseBirthDateText(petDraft.birth_date_text);
-                    const isSelected = selectedDate != null && selectedDate.getFullYear() === profileBirthCalendarMonth.getFullYear() && selectedDate.getMonth() === profileBirthCalendarMonth.getMonth() && selectedDate.getDate() === day;
-                    return (
-                      <TouchableOpacity key={`pd-${idx}`} disabled={!day}
-                        style={[styles.calendarDayBtn, !day && styles.calendarDayBtnDisabled, isSelected && styles.calendarDayBtnSelected]}
-                        onPress={() => { if (!day) return; const d = new Date(profileBirthCalendarMonth.getFullYear(), profileBirthCalendarMonth.getMonth(), day); setPetDraft(p => ({ ...p, birth_date_text: formatBirthDateShort(d) })); setShowProfileBirthCalendar(false); }}>
-                        <Text style={[styles.calendarDayText, isSelected && styles.calendarDayTextSelected]}>{day ?? ''}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-            )}
-
-            <Text style={styles.fieldLabel}>Peso (kg)</Text>
-            <TextInput style={styles.input} placeholder="Ej: 8.5" placeholderTextColor={C.textMuted}
-              value={petDraft.weight_kg} onChangeText={(v) => setPetDraft(p => ({ ...p, weight_kg: v }))}
-              keyboardType="decimal-pad" />
-
-            <View style={styles.switchRow}>
-              <Text style={styles.switchLabel}>✂️  Esterilizado/a</Text>
-              <Switch value={petDraft.sterilized} onValueChange={(v) => setPetDraft(p => ({ ...p, sterilized: v }))}
-                trackColor={{ false: C.border, true: C.primary }} thumbColor={C.white} />
-            </View>
-
-            <Text style={styles.fieldLabel}>Número de chip / microchip</Text>
-            <TextInput style={styles.input} placeholder="Ej: 985112345678901" placeholderTextColor={C.textMuted}
-              value={petDraft.chip_number} onChangeText={(v) => setPetDraft(p => ({ ...p, chip_number: v }))}
-              keyboardType="number-pad" />
-          </Card>
-
-          {/* ── Descripción física ── */}
-          <Card title="🐾  Descripción física" accent={C.accent}>
-            <TextInput style={[styles.input, styles.multiline]} multiline
-              placeholder='Ej: "Blanco con manchas café en el lomo, orejas negras"'
-              placeholderTextColor={C.textMuted}
-              value={petDraft.description}
-              onChangeText={(v) => setPetDraft(p => ({ ...p, description: v }))} />
-          </Card>
-
-          {/* ── Salud ── */}
-          <Card title="🩺  Salud" accent={C.success}>
-            <Text style={styles.fieldLabel}>Alergias</Text>
-            <TextInput style={[styles.input, styles.multiline]} multiline
-              placeholder="Ej: Polen, ciertos antibióticos"
-              placeholderTextColor={C.textMuted}
-              value={petDraft.allergies}
-              onChangeText={(v) => setPetDraft(p => ({ ...p, allergies: v }))} />
-
-            <Text style={styles.fieldLabel}>Medicamentos actuales</Text>
-            <TextInput style={[styles.input, styles.multiline]} multiline
-              placeholder="Ej: Frontline mensual, Nexgard"
-              placeholderTextColor={C.textMuted}
-              value={petDraft.medications}
-              onChangeText={(v) => setPetDraft(p => ({ ...p, medications: v }))} />
-
-            <Text style={styles.fieldLabel}>Condiciones / enfermedades</Text>
-            <TextInput style={[styles.input, styles.multiline]} multiline
-              placeholder="Ej: Displasia de cadera leve"
-              placeholderTextColor={C.textMuted}
-              value={petDraft.conditions}
-              onChangeText={(v) => setPetDraft(p => ({ ...p, conditions: v }))} />
-
-            <Text style={styles.fieldLabel}>Grupo sanguíneo</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-              {BLOOD_TYPES.map(bt => (
-                <TouchableOpacity key={bt}
-                  style={[styles.filterChip, petDraft.blood_type === bt && styles.filterChipActive]}
-                  onPress={() => setPetDraft(p => ({ ...p, blood_type: bt }))}>
-                  <Text style={[styles.filterChipText, petDraft.blood_type === bt && styles.filterChipTextActive]}>{bt}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </Card>
-
-          {/* ── Seguro veterinario ── */}
-          <Card title="🛡️  Seguro veterinario" accent={C.warning}>
-            <Text style={styles.fieldLabel}>Nombre del seguro</Text>
-            <TextInput style={styles.input} placeholder="Ej: Mapfre Mascotas, BCI Seguros"
-              placeholderTextColor={C.textMuted}
-              value={petDraft.insurance_name}
-              onChangeText={(v) => setPetDraft(p => ({ ...p, insurance_name: v }))} />
-
-            <Text style={styles.fieldLabel}>Número de póliza</Text>
-            <TextInput style={styles.input} placeholder="Ej: 1234567-8"
-              placeholderTextColor={C.textMuted}
-              value={petDraft.insurance_policy}
-              onChangeText={(v) => setPetDraft(p => ({ ...p, insurance_policy: v }))} />
-          </Card>
-
-          <TouchableOpacity style={styles.btnPrimary} onPress={savePetProfile} disabled={loading} activeOpacity={0.85}>
-            <Text style={styles.btnPrimaryText}>{loading ? 'Guardando...' : 'Guardar información'}</Text>
-          </TouchableOpacity>
-        </View>
+        <PetInfoScreen
+          selectedPet={selectedPet}
+          isEditingPetDetail={isEditingPetDetail}
+          petDraft={petDraft} setPetDraft={setPetDraft}
+          showProfileBirthCalendar={showProfileBirthCalendar}
+          setShowProfileBirthCalendar={setShowProfileBirthCalendar}
+          profileBirthCalendarMonth={profileBirthCalendarMonth}
+          setProfileBirthCalendarMonth={setProfileBirthCalendarMonth}
+          loading={loading}
+          savePetProfile={savePetProfile}
+          setScreen={setScreen}
+        />
       );
     }
 
     if (screen === 'PetContact') {
-      // Aviso público (siempre visible)
-      const publicBanner = (
-        <View style={{ backgroundColor: C.warningLight, borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 4 }}>
-          <Text style={{ fontSize: 20 }}>👁</Text>
-          <Text style={{ flex: 1, color: C.warning, fontWeight: '600', fontSize: 13, lineHeight: 19 }}>
-            Esta información es pública: aparece cuando alguien escanea el tag de {selectedPet?.name ?? 'tu mascota'}.
-          </Text>
-        </View>
-      );
-
-      if (!isEditingPetDetail) {
-        // ── Vista de solo lectura ──
-        return (
-          <View style={styles.form}>
-            {publicBanner}
-            <Card title="📞  Contacto principal" accent={C.primary}>
-              <InfoRow label="Nombre" value={petDraft.contact_primary_name} />
-              <InfoRow label="Teléfono" value={petDraft.owner_phone} />
-            </Card>
-
-            <Card title="👤  Contacto secundario" accent={C.accent}>
-              <InfoRow label="Nombre" value={petDraft.contact_secondary_name} />
-              <InfoRow label="Teléfono" value={petDraft.contact_secondary_phone} />
-            </Card>
-
-            <Card title="🩺  Veterinario de cabecera" accent={C.success}>
-              <InfoRow label="Nombre / clínica" value={petDraft.vet_name} />
-              <InfoRow label="Teléfono" value={petDraft.vet_phone} />
-            </Card>
-
-            <Card title="💬  Mensaje al que escanea" accent={C.primaryLight}>
-              <Text style={{ color: petDraft.public_notes ? C.text : C.textMuted, lineHeight: 20 }}>
-                {petDraft.public_notes || '—'}
-              </Text>
-            </Card>
-          </View>
-        );
-      }
-
-      // ── Vista de edición ──
       return (
-        <View style={styles.form}>
-          {publicBanner}
-
-          {/* ── Contacto principal ── */}
-          <Card title="📞  Contacto principal" accent={C.primary}>
-            <Text style={styles.fieldLabel}>Nombre</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ej: Nombre Apellido"
-              placeholderTextColor={C.textMuted}
-              value={petDraft.contact_primary_name}
-              onChangeText={(v) => setPetDraft((p) => ({ ...p, contact_primary_name: v }))}
-            />
-            <Text style={styles.fieldLabel}>Teléfono</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="+56912345678"
-              placeholderTextColor={C.textMuted}
-              value={petDraft.owner_phone}
-              onChangeText={(v) => setPetDraft((p) => ({ ...p, owner_phone: v }))}
-              keyboardType="phone-pad"
-            />
-          </Card>
-
-          {/* ── Contacto secundario ── */}
-          <Card title="👤  Contacto secundario" accent={C.accent}>
-            <Text style={styles.fieldLabel}>Nombre</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ej: María González"
-              placeholderTextColor={C.textMuted}
-              value={petDraft.contact_secondary_name}
-              onChangeText={(v) => setPetDraft((p) => ({ ...p, contact_secondary_name: v }))}
-            />
-            <Text style={styles.fieldLabel}>Teléfono</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="+56912345678"
-              placeholderTextColor={C.textMuted}
-              value={petDraft.contact_secondary_phone}
-              onChangeText={(v) => setPetDraft((p) => ({ ...p, contact_secondary_phone: v }))}
-              keyboardType="phone-pad"
-            />
-          </Card>
-
-          {/* ── Veterinario ── */}
-          <Card title="🩺  Veterinario de cabecera" accent={C.success}>
-            <Text style={styles.fieldLabel}>Nombre del veterinario / clínica</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ej: Dr. Martínez — ClínicaVet Las Condes"
-              placeholderTextColor={C.textMuted}
-              value={petDraft.vet_name}
-              onChangeText={(v) => setPetDraft((p) => ({ ...p, vet_name: v }))}
-            />
-            <Text style={styles.fieldLabel}>Teléfono</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="+56912345678"
-              placeholderTextColor={C.textMuted}
-              value={petDraft.vet_phone}
-              onChangeText={(v) => setPetDraft((p) => ({ ...p, vet_phone: v }))}
-              keyboardType="phone-pad"
-            />
-          </Card>
-
-          {/* ── Mensaje al que escanea ── */}
-          <Card title="💬  Mensaje al que escanea" accent={C.primaryLight}>
-            <Text style={[styles.fieldLabel, { marginBottom: 4 }]}>
-              Notas visibles al escanear el tag (indicaciones, carácter de la mascota, etc.)
-            </Text>
-            <TextInput
-              style={[styles.input, styles.multiline]}
-              multiline
-              placeholder='Ej: "Es asustadizo, no lo persigan. Llamen al dueño."'
-              placeholderTextColor={C.textMuted}
-              value={petDraft.public_notes}
-              onChangeText={(v) => setPetDraft((p) => ({ ...p, public_notes: v }))}
-            />
-          </Card>
-
-          <TouchableOpacity style={styles.btnPrimary} onPress={savePetProfile} disabled={loading} activeOpacity={0.85}>
-            <Text style={styles.btnPrimaryText}>{loading ? 'Guardando...' : 'Guardar contacto'}</Text>
-          </TouchableOpacity>
-        </View>
+        <PetContactScreen
+          selectedPet={selectedPet}
+          isEditingPetDetail={isEditingPetDetail}
+          petDraft={petDraft} setPetDraft={setPetDraft}
+          loading={loading}
+          savePetProfile={savePetProfile}
+        />
       );
     }
 
