@@ -1,3 +1,4 @@
+import React from 'react';
 import { Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { styles } from '../styles';
 import { C } from '../constants/colors';
@@ -34,8 +35,8 @@ type PetVetHistoryScreenProps = {
   resetVetForm: () => void;
   addPhotoAttachmentToForm: () => void;
   addPdfAttachmentToForm: () => void;
-  renderEditableAttachmentChip: (att: VetAttachment) => JSX.Element;
-  renderAttachmentChip: (att: VetAttachment) => JSX.Element;
+  renderEditableAttachmentChip: (att: VetAttachment) => React.ReactElement;
+  renderAttachmentChip: (att: VetAttachment) => React.ReactElement;
 };
 
 export default function PetVetHistoryScreen({
