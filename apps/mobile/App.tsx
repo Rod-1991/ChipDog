@@ -1151,7 +1151,9 @@ export default function App() {
       });
       const bytes = Ndef.encodeMessage([Ndef.uriRecord(url)]);
       await NfcManager.ndefHandler.writeNdefMessage(bytes);
-      await NfcManager.setAlertMessageIOS('Tag grabado ✅');
+      // Bloquear el chip contra reescritura — irreversible, una mascota por tag
+      await NfcManager.ndefHandler.makeReadOnly();
+      await NfcManager.setAlertMessageIOS('Tag grabado y bloqueado ✅');
       // Guardar en Supabase
       const ok = await saveLinkTagCode(linkTagCode);
       if (ok) setNfcStatus('success');
