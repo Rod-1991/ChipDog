@@ -9,12 +9,20 @@
       "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://kcowhlsfbuixvdjhrikl.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_wVtif8m5qtuzbqmB0h3XJQ_mtRJwc_7"
+      }
     },
     "production": {
       "autoIncrement": true,
       "ios": {
         "image": "macos-sequoia-15.6-xcode-16.4"
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://kcowhlsfbuixvdjhrikl.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_wVtif8m5qtuzbqmB0h3XJQ_mtRJwc_7"
       }
     }
   },
