@@ -34,7 +34,13 @@ Orientada a jóvenes dog-lovers chilenos. Diseño moderno y cercano.
 chipdog-v2/
 ├── apps/
 │   ├── mobile/          # React Native (Expo)
-│   │   ├── App.tsx      # App entera (~3000 líneas, un solo archivo)
+│   │   ├── App.tsx      # Lógica, estado y handlers (~2200 líneas tras refactor)
+│   │   ├── screens/     # 21 pantallas extraídas como componentes separados
+│   │   ├── components/  # Card, InfoRow
+│   │   ├── constants/   # colors, breeds, comunas
+│   │   ├── utils/       # helpers
+│   │   ├── types/       # index.ts con todos los tipos
+│   │   ├── lib/         # supabase.ts
 │   │   ├── app.config.ts
 │   │   └── eas.json
 │   └── web/             # Vite — página pública de tag scan
@@ -141,6 +147,9 @@ Login → Home (dashboard)
 - ✅ Draft de vacunas y historial vet se resetea al cambiar de mascota
 - ✅ Signed URLs de mascotas perdidas usan cache (no se regeneran en cada visita)
 - ✅ NFC cleanup en finally (lector NFC siempre queda limpio)
+- ✅ Refactor completo: App.tsx dividido en 21 pantallas separadas en screens/ (branch refactor/split-screens)
+- ✅ Variables Supabase agregadas a eas.json (preview + production) — .env no llega a EAS
+- ✅ NFC: makeReadOnly() agregado tras escribir (funciona en Android; iOS no soportado por CoreNFC — protección vía Supabase)
 - ⏳ TestFlight link público pendiente de activar
 - ⏳ Datos de prueba en BD a limpiar antes de lanzar (Max, Luna, Simba, Rocky, Nala, Milo)
 - ⏳ Una mascota de prueba marcada como perdida — desmarcar antes de lanzar
@@ -187,7 +196,8 @@ cd apps/mobile && eas submit --platform ios
 ---
 
 ## Notas técnicas importantes
-- `App.tsx` es un solo archivo monolítico (~3000 líneas). No fragmentar hasta que sea necesario.
+- `App.tsx` contiene solo lógica/estado/handlers (~2200 líneas). Las 21 pantallas viven en `screens/`.
+- Cada pantalla recibe todo su estado como props desde App(). No hay estado local en las pantallas.
 - Swipe-back usa `PanResponder` con `useRef` + `handleBackRef.current` para evitar stale closure.
 - `MapView.animateToRegion()` con `setTimeout(300ms)` para centrar mapa después de navegación.
 - `NearbyMap` se renderiza fuera del `ScrollView` principal (usa `flex:1` para mapa full-screen).
