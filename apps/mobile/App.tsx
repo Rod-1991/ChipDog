@@ -22,6 +22,7 @@ import {
 import type {
   Screen, Pet, PetMember, PetMemberInvitation, UserProfile,
   FoundPet, Vaccine, LostPetPin, NearbyLostPet, VetRecord, VetAttachment,
+  WeightEntry, FoodEntry,
 } from './types';
 import { styles } from './styles';
 import LoginScreen from './screens/LoginScreen';
@@ -34,10 +35,6 @@ import HomeScreen from './screens/HomeScreen';
 import AddPetScreen from './screens/AddPetScreen';
 import PetDetailScreen from './screens/PetDetailScreen';
 import PetListScreen from './screens/PetListScreen';
-import PetInfoScreen from './screens/PetInfoScreen';
-import PetContactScreen from './screens/PetContactScreen';
-import PetVetHistoryScreen from './screens/PetVetHistoryScreen';
-import PetVaccinesScreen from './screens/PetVaccinesScreen';
 import LostPetMapScreen from './screens/LostPetMapScreen';
 import NearbyMapScreen from './screens/NearbyMapScreen';
 import LostPetListScreen from './screens/LostPetListScreen';
@@ -119,7 +116,9 @@ export default function App() {
     medications: '',
     conditions: '',
     vet_name: '',
-    vet_phone: ''
+    vet_phone: '',
+    food_brand: '',
+    food_notes: '',
   });
 
   const [foundCode, setFoundCode] = useState('');
@@ -188,6 +187,8 @@ export default function App() {
   });
 
   const [upcomingVaccinesCount, setUpcomingVaccinesCount] = useState(0);
+  const [weightHistory, setWeightHistory] = useState<WeightEntry[]>([]);
+  const [foodHistory, setFoodHistory] = useState<FoodEntry[]>([]);
 
   const [inviteEmail, setInviteEmail] = useState('');
   const [petMembers, setPetMembers] = useState<PetMember[]>([]);
@@ -430,7 +431,9 @@ export default function App() {
         medications: pet.medications ?? '',
         conditions: pet.conditions ?? '',
         vet_name: pet.vet_name ?? '',
-        vet_phone: pet.vet_phone ?? ''
+        vet_phone: pet.vet_phone ?? '',
+        food_brand: pet.food_brand ?? '',
+        food_notes: pet.food_notes ?? '',
       });
 
       await loadSelectedPetPhoto(pet.photo_url ?? null);
@@ -1567,6 +1570,56 @@ export default function App() {
     resetVetForm();
   }, [screen, selectedPet?.id]);
 
+  const fetchWeightHistory = async (petId: number) => {
+    const { data } = await supabase
+      .from('pet_weight_history')
+      .select('*')
+      .eq('pet_id', petId)
+      .order('measured_at', { ascending: true });
+    setWeightHistory((data as WeightEntry[]) ?? []);
+  };
+
+  const fetchFoodHistory = async (petId: number) => {
+    const { data } = await supabase
+      .from('pet_food_history')
+      .select('*')
+      .eq('pet_id', petId)
+      .order('started_at', { ascending: false });
+    setFoodHistory((data as FoodEntry[]) ?? []);
+  };
+
+  const saveWeightEntry = async (petId: number, weight_kg: number, measured_at: string, notes: string) => {
+    const { error } = await supabase
+      .from('pet_weight_history')
+      .insert({ pet_id: petId, weight_kg, measured_at, notes: notes || null });
+    if (error) { Alert.alert('Error', error.message); return; }
+    // Sync weight_kg in pets table so Info tab and profile card stay current
+    const { error: updateError } = await supabase.from('pets').update({ weight_kg }).eq('id', petId);
+    if (updateError) { Alert.alert('Error actualizando peso', updateError.message); return; }
+    await fetchWeightHistory(petId);
+    setSelectedPet(prev => prev?.id === petId ? { ...prev, weight_kg } : prev);
+    setPetDraft(prev => ({ ...prev, weight_kg: String(weight_kg) }));
+    await fetchPets();
+  };
+
+  const deleteWeightEntry = async (id: number, petId: number) => {
+    await supabase.from('pet_weight_history').delete().eq('id', id);
+    await fetchWeightHistory(petId);
+  };
+
+  const saveFoodEntry = async (petId: number, food_brand: string, started_at: string, notes: string) => {
+    const { error } = await supabase
+      .from('pet_food_history')
+      .insert({ pet_id: petId, food_brand, started_at, notes: notes || null });
+    if (error) { Alert.alert('Error', error.message); return; }
+    await fetchFoodHistory(petId);
+  };
+
+  const deleteFoodEntry = async (id: number, petId: number) => {
+    await supabase.from('pet_food_history').delete().eq('id', id);
+    await fetchFoodHistory(petId);
+  };
+
   const fetchVaccines = async (petId: number) => {
     const { data, error } = await supabase
       .from('pet_vaccines')
@@ -1671,8 +1724,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (screen !== 'PetVaccines' || !selectedPet) return;
+    if (screen !== 'PetDetail' || !selectedPet) return;
     fetchVaccines(selectedPet.id);
+    fetchWeightHistory(selectedPet.id);
+    fetchFoodHistory(selectedPet.id);
   }, [screen, selectedPet?.id]);
 
   // LinkTag — generar código y resetear estado
@@ -1977,77 +2032,38 @@ export default function App() {
           pickAndUploadPetPhoto={pickAndUploadPetPhoto}
           openLostMap={openLostMap}
           updatePetLostStatus={updatePetLostStatus}
-          setIsEditingPetDetail={setIsEditingPetDetail}
           fetchPets={fetchPets}
-          setScreen={setScreen}
-        />
-      );
-    }
-
-    if (screen === 'PetVetHistory') {
-      return (
-        <PetVetHistoryScreen
+          petDraft={petDraft} setPetDraft={setPetDraft}
+          showProfileBirthCalendar={showProfileBirthCalendar}
+          setShowProfileBirthCalendar={setShowProfileBirthCalendar}
+          profileBirthCalendarMonth={profileBirthCalendarMonth}
+          setProfileBirthCalendarMonth={setProfileBirthCalendarMonth}
+          savePetProfile={savePetProfile}
+          vaccines={vaccines}
+          showVaccineForm={showVaccineForm} setShowVaccineForm={setShowVaccineForm}
+          editingVaccineId={editingVaccineId} setEditingVaccineId={setEditingVaccineId}
+          vaccineForm={vaccineForm} setVaccineForm={setVaccineForm}
+          saveVaccine={saveVaccine} deleteVaccine={deleteVaccine}
+          resetVaccineForm={resetVaccineForm} startEditVaccine={startEditVaccine}
+          vaccineStatus={vaccineStatus}
           vetView={vetView} setVetView={setVetView}
           vetHistory={vetHistory}
           selectedVetRecord={selectedVetRecord} setSelectedVetRecord={setSelectedVetRecord}
           vetForm={vetForm} setVetForm={setVetForm}
           symptomText={symptomText} setSymptomText={setSymptomText}
           editingVetRecordId={editingVetRecordId}
-          loading={loading}
-          saveVetRecord={saveVetRecord}
-          deleteVetRecord={deleteVetRecord}
-          resetVetForm={resetVetForm}
-          addPhotoAttachmentToForm={addPhotoAttachmentToForm}
-          addPdfAttachmentToForm={addPdfAttachmentToForm}
-          renderEditableAttachmentChip={renderEditableAttachmentChip}
-          renderAttachmentChip={renderAttachmentChip}
-        />
-      );
-    }
-
-    if (screen === 'PetVaccines') {
-      return (
-        <PetVaccinesScreen
-          selectedPet={selectedPet}
-          vaccines={vaccines}
-          showVaccineForm={showVaccineForm} setShowVaccineForm={setShowVaccineForm}
-          editingVaccineId={editingVaccineId} setEditingVaccineId={setEditingVaccineId}
-          vaccineForm={vaccineForm} setVaccineForm={setVaccineForm}
-          loading={loading}
-          saveVaccine={saveVaccine}
-          deleteVaccine={deleteVaccine}
-          resetVaccineForm={resetVaccineForm}
-          startEditVaccine={startEditVaccine}
-          vaccineStatus={vaccineStatus}
-        />
-      );
-    }
-
-    if (screen === 'PetInfo') {
-      return (
-        <PetInfoScreen
-          selectedPet={selectedPet}
-          isEditingPetDetail={isEditingPetDetail}
-          petDraft={petDraft} setPetDraft={setPetDraft}
-          showProfileBirthCalendar={showProfileBirthCalendar}
-          setShowProfileBirthCalendar={setShowProfileBirthCalendar}
-          profileBirthCalendarMonth={profileBirthCalendarMonth}
-          setProfileBirthCalendarMonth={setProfileBirthCalendarMonth}
-          loading={loading}
-          savePetProfile={savePetProfile}
+          saveVetRecord={saveVetRecord} deleteVetRecord={deleteVetRecord} resetVetForm={resetVetForm}
+          addPhotoAttachmentToForm={addPhotoAttachmentToForm} addPdfAttachmentToForm={addPdfAttachmentToForm}
+          renderEditableAttachmentChip={renderEditableAttachmentChip} renderAttachmentChip={renderAttachmentChip}
+          linkTagCode={linkTagCode}
+          linkTagMode={linkTagMode} setLinkTagMode={setLinkTagMode}
+          nfcStatus={nfcStatus} setNfcStatus={setNfcStatus}
+          nfcError={nfcError} setNfcError={setNfcError}
+          writeNfcTag={writeNfcTag} saveLinkTagCode={saveLinkTagCode}
+          weightHistory={weightHistory} foodHistory={foodHistory}
+          saveWeightEntry={saveWeightEntry} deleteWeightEntry={deleteWeightEntry}
+          saveFoodEntry={saveFoodEntry} deleteFoodEntry={deleteFoodEntry}
           setScreen={setScreen}
-        />
-      );
-    }
-
-    if (screen === 'PetContact') {
-      return (
-        <PetContactScreen
-          selectedPet={selectedPet}
-          isEditingPetDetail={isEditingPetDetail}
-          petDraft={petDraft} setPetDraft={setPetDraft}
-          loading={loading}
-          savePetProfile={savePetProfile}
         />
       );
     }
@@ -2137,7 +2153,7 @@ export default function App() {
   };
 
   const isFullScreenMap = screen === 'NearbyMap' || screen === 'ScanTag';
-  const isFullScreen = isFullScreenMap || screen === 'Login' || screen === 'Register' || screen === 'Home' || screen === 'PetList';
+  const isFullScreen = isFullScreenMap || screen === 'Login' || screen === 'Register' || screen === 'Home' || screen === 'PetList' || screen === 'PetDetail';
 
   return (
     <>
@@ -2206,6 +2222,8 @@ export default function App() {
                             conditions: selectedPet.conditions ?? '',
                             vet_name: selectedPet.vet_name ?? '',
                             vet_phone: selectedPet.vet_phone ?? '',
+                            food_brand: selectedPet.food_brand ?? '',
+                            food_notes: selectedPet.food_notes ?? '',
                           });
                         }
                         setIsEditingPetDetail(false);
