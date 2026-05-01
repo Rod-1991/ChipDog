@@ -22,7 +22,7 @@ import {
 import type {
   Screen, Pet, PetMember, PetMemberInvitation, UserProfile,
   FoundPet, Vaccine, LostPetPin, NearbyLostPet, VetRecord, VetAttachment,
-  WeightEntry, FoodEntry,
+  WeightEntry, FoodEntry, PetSighting,
 } from './types';
 import { styles } from './styles';
 import LoginScreen from './screens/LoginScreen';
@@ -162,6 +162,7 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [userName, setUserName] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [nearbyLostPets, setNearbyLostPets] = useState<NearbyLostPet[]>([]);
   const [allLostPets, setAllLostPets] = useState<LostPetPin[]>([]);
   const [nearbyUserLoc, setNearbyUserLoc] = useState<{ lat: number; lng: number } | null>(null);
@@ -189,6 +190,7 @@ export default function App() {
   const [upcomingVaccinesCount, setUpcomingVaccinesCount] = useState(0);
   const [weightHistory, setWeightHistory] = useState<WeightEntry[]>([]);
   const [foodHistory, setFoodHistory] = useState<FoodEntry[]>([]);
+  const [sightings, setSightings] = useState<PetSighting[]>([]);
 
   const [inviteEmail, setInviteEmail] = useState('');
   const [petMembers, setPetMembers] = useState<PetMember[]>([]);
@@ -320,6 +322,31 @@ export default function App() {
     } catch { /* silent */ }
   };
 
+  const fetchSightings = async (petId: number) => {
+    const { data } = await supabase
+      .from('pet_sightings')
+      .select('*')
+      .eq('pet_id', petId)
+      .order('created_at', { ascending: false });
+    setSightings((data as PetSighting[]) ?? []);
+  };
+
+  const saveSighting = async (petId: number, reporterName: string, comment: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase
+      .from('pet_sightings')
+      .insert({ pet_id: petId, reporter_name: reporterName || 'Anónimo', comment, user_id: user?.id ?? null });
+    if (error) { Alert.alert('Error', error.message); return false; }
+    await fetchSightings(petId);
+    return true;
+  };
+
+  const deleteSighting = async (id: number, petId: number) => {
+    const { error } = await supabase.from('pet_sightings').delete().eq('id', id);
+    if (error) { Alert.alert('Error', error.message); return; }
+    await fetchSightings(petId);
+  };
+
   const loadNearbyLostPets = async (requestPermission = false) => {
     try {
       let status: string;
@@ -448,6 +475,12 @@ export default function App() {
       await supabase.from('pets').update({ is_featured: false }).neq('id', petId);
     }
     await supabase.from('pets').update({ is_featured: !currentFeatured }).eq('id', petId);
+    await fetchPets();
+  };
+
+  const updatePetContactPublic = async (petId: number, value: boolean) => {
+    await supabase.from('pets').update({ contact_public: value }).eq('id', petId);
+    setSelectedPet(prev => prev?.id === petId ? { ...prev, contact_public: value } : prev);
     await fetchPets();
   };
 
@@ -839,6 +872,7 @@ export default function App() {
     const name = user?.user_metadata?.full_name ?? user?.email?.split('@')[0] ?? null;
     setUserName(name);
     setUserId(user?.id ?? null);
+    setUserEmail(user?.email ?? null);
   };
 
   const loadPetMembers = async (petId: number) => {
@@ -1065,6 +1099,7 @@ export default function App() {
     setNearbyUserLoc(null);
     setUserName(null);
     setUserId(null);
+    setUserEmail(null);
     setUserProfile(null);
     setProfileDraft({ first_name: '', last_name: '', phone: '', rut: '', sex: '', birth_year: 0, commune: '' });
     setPendingInvitations([]);
@@ -1783,6 +1818,15 @@ export default function App() {
     ).then(entries => setLostPetSignedUrls(prev => ({ ...prev, ...Object.fromEntries(entries) })));
   }, [screen, allLostPets.length]);
 
+  // Cargar avistamientos al entrar al detalle
+  useEffect(() => {
+    if (screen === 'LostPetDetail' && selectedLostPet) {
+      fetchSightings(selectedLostPet.id);
+    } else {
+      setSightings([]);
+    }
+  }, [screen, selectedLostPet?.id]);
+
   // Signed URL para foto de mascota perdida en detalle
   useEffect(() => {
     if (screen !== 'LostPetDetail' || !selectedLostPet?.photo_url) {
@@ -1920,6 +1964,9 @@ export default function App() {
           respondInvitation={respondInvitation}
           saveUserProfile={saveUserProfile}
           handleLogout={handleLogout}
+          pets={pets}
+          userEmail={userEmail}
+          setScreen={setScreen}
         />
       );
     }
@@ -2032,6 +2079,7 @@ export default function App() {
           pickAndUploadPetPhoto={pickAndUploadPetPhoto}
           openLostMap={openLostMap}
           updatePetLostStatus={updatePetLostStatus}
+          updatePetContactPublic={updatePetContactPublic}
           fetchPets={fetchPets}
           petDraft={petDraft} setPetDraft={setPetDraft}
           showProfileBirthCalendar={showProfileBirthCalendar}
@@ -2110,6 +2158,10 @@ export default function App() {
         <LostPetDetailScreen
           selectedLostPet={selectedLostPet}
           lostPetPhotoUrl={lostPetPhotoUrl}
+          sightings={sightings}
+          saveSighting={saveSighting}
+          deleteSighting={deleteSighting}
+          userId={userId}
           setScreen={setScreen}
         />
       );
@@ -2152,8 +2204,8 @@ export default function App() {
     return null;
   };
 
-  const isFullScreenMap = screen === 'NearbyMap' || screen === 'ScanTag';
-  const isFullScreen = isFullScreenMap || screen === 'Login' || screen === 'Register' || screen === 'Home' || screen === 'PetList' || screen === 'PetDetail';
+  const isFullScreenMap = screen === 'ScanTag';
+  const isFullScreen = isFullScreenMap || screen === 'NearbyMap' || screen === 'LostPetDetail' || screen === 'Login' || screen === 'Register' || screen === 'Home' || screen === 'PetList' || screen === 'PetDetail' || screen === 'Profile';
 
   return (
     <>

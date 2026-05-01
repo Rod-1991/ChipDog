@@ -42,6 +42,7 @@ type Props = {
   pickAndUploadPetPhoto: (petId: number) => void;
   openLostMap: () => void;
   updatePetLostStatus: (petId: number, isLost: boolean) => void;
+  updatePetContactPublic: (petId: number, value: boolean) => void;
   fetchPets: () => Promise<void>;
   petDraft: PetDraft;
   setPetDraft: (fn: (p: PetDraft) => PetDraft) => void;
@@ -92,7 +93,7 @@ function profilePct(pet: Pet, draft: PetDraft): number {
 
 export default function PetDetailScreen({
   selectedPet, petPhotoSignedUrl, userId, loading, setLoading, setSelectedPet,
-  pickAndUploadPetPhoto, openLostMap, updatePetLostStatus, fetchPets,
+  pickAndUploadPetPhoto, openLostMap, updatePetLostStatus, updatePetContactPublic, fetchPets,
   petDraft, setPetDraft, showProfileBirthCalendar, setShowProfileBirthCalendar,
   profileBirthCalendarMonth, setProfileBirthCalendarMonth, savePetProfile,
   vaccines, showVaccineForm, setShowVaccineForm, editingVaccineId, setEditingVaccineId,
@@ -340,9 +341,24 @@ export default function PetDetailScreen({
                 />
               </View>
               {selectedPet.is_lost && (
-                <TouchableOpacity onPress={openLostMap} style={{ marginTop: 8 }}>
-                  <Text style={{ color: C.primary, fontWeight: '700', fontSize: 13 }}>📍 Editar ubicación y radio</Text>
-                </TouchableOpacity>
+                <>
+                  <TouchableOpacity onPress={openLostMap} style={{ marginTop: 8 }}>
+                    <Text style={{ color: C.primary, fontWeight: '700', fontSize: 13 }}>📍 Editar ubicación y radio</Text>
+                  </TouchableOpacity>
+                  <View style={[styles.switchRow, { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.border }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.switchLabel}>📞  Mostrar contacto</Text>
+                      <Text style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>Visible para quienes encuentren el tag</Text>
+                    </View>
+                    <Switch
+                      value={selectedPet.contact_public ?? false}
+                      onValueChange={(v) => updatePetContactPublic(selectedPet.id, v)}
+                      disabled={loading}
+                      trackColor={{ false: C.border, true: C.primary }}
+                      thumbColor={C.white}
+                    />
+                  </View>
+                </>
               )}
             </View>
           )}
