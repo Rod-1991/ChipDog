@@ -187,6 +187,8 @@ export default function App() {
     notes: ''
   });
 
+  const [upcomingVaccinesCount, setUpcomingVaccinesCount] = useState(0);
+
   const [inviteEmail, setInviteEmail] = useState('');
   const [petMembers, setPetMembers] = useState<PetMember[]>([]);
   const [pendingInvitations, setPendingInvitations] = useState<PetMemberInvitation[]>([]);
@@ -253,7 +255,7 @@ export default function App() {
 
     const { data, error } = await supabase
       .from('pets')
-      .select('id,owner_id,name,species,breed,is_lost,photo_url')
+      .select('id,owner_id,name,species,breed,is_lost,is_featured,photo_url,birth_year,weight_kg,color,chip_number')
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -264,6 +266,26 @@ export default function App() {
     const nextPets = (data as Pet[]) ?? [];
     setPets(nextPets);
     await loadHomePetPhotos(nextPets);
+  };
+
+  const fetchUpcomingVaccines = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const in30 = new Date();
+    in30.setDate(in30.getDate() + 30);
+    const { data } = await supabase
+      .from('pet_vaccines')
+      .select('id, next_dose_date, expiry_date, pet_id')
+      .in('pet_id', (await supabase.from('pets').select('id').eq('owner_id', user.id)).data?.map((p: { id: number }) => p.id) ?? []);
+    if (!data) return;
+    const today = new Date();
+    const count = data.filter((v: { next_dose_date: string | null; expiry_date: string | null }) => {
+      const d = v.next_dose_date ?? v.expiry_date;
+      if (!d) return false;
+      const date = new Date(d);
+      return date >= today && date <= in30;
+    }).length;
+    setUpcomingVaccinesCount(count);
   };
 
   const registerPushToken = async () => {
@@ -415,6 +437,15 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const togglePetFeatured = async (petId: number, currentFeatured: boolean) => {
+    // Si se va a destacar, primero quita destacado de todas las otras
+    if (!currentFeatured) {
+      await supabase.from('pets').update({ is_featured: false }).neq('id', petId);
+    }
+    await supabase.from('pets').update({ is_featured: !currentFeatured }).eq('id', petId);
+    await fetchPets();
   };
 
   const updatePetLostStatus = async (petId: number, isLost: boolean) => {
@@ -683,6 +714,7 @@ export default function App() {
           setUserId(data.session.user.id);
           setIsLoggedIn(true);
           await fetchPets();
+          await fetchUpcomingVaccines();
           if (!mounted) return;
           setScreen('Home');
         } else {
@@ -701,6 +733,7 @@ export default function App() {
       if (session) {
         setUserId(session.user.id);
         await fetchPets();
+        await fetchUpcomingVaccines();
         if (!mounted) return;
         setScreen('Home');
       } else {
@@ -791,6 +824,7 @@ export default function App() {
     }
 
     await fetchPets();
+    await fetchUpcomingVaccines();
     await registerPushToken();
     await loadUserName();
     setIsLoggedIn(true);
@@ -993,6 +1027,7 @@ export default function App() {
 
       if (data.session) {
         await fetchPets();
+        await fetchUpcomingVaccines();
         await registerPushToken();
         await loadUserName();
         setIsLoggedIn(true);
@@ -1885,11 +1920,14 @@ export default function App() {
     if (screen === 'Home') {
       return (
         <HomeScreen
-          allLostPets={allLostPets}
+          pets={pets}
+          petSignedUrls={petSignedUrls}
           userProfile={userProfile}
           userName={userName}
+          upcomingVaccinesCount={upcomingVaccinesCount}
           pendingInvitations={pendingInvitations}
           handleLogout={handleLogout}
+          loadPetDetail={loadPetDetail}
           setScreen={setScreen}
         />
       );
@@ -1901,6 +1939,7 @@ export default function App() {
           pets={pets}
           petSignedUrls={petSignedUrls}
           loadPetDetail={loadPetDetail}
+          togglePetFeatured={togglePetFeatured}
           setScreen={setScreen}
         />
       );
@@ -2098,113 +2137,117 @@ export default function App() {
   };
 
   const isFullScreenMap = screen === 'NearbyMap' || screen === 'ScanTag';
+  const isFullScreen = isFullScreenMap || screen === 'Login' || screen === 'Register' || screen === 'Home' || screen === 'PetList';
 
   return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 6 : 0}
-      >
-        {canGoBack && !isFullScreenMap ? (
-          <View style={styles.navBar}>
-            {/* Botón atrás */}
-            <TouchableOpacity style={styles.navBackBtn} onPress={handleBack} activeOpacity={0.7}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Text style={styles.navBackArrow}>‹</Text>
-              <Text style={styles.navBackLabel}>Atrás</Text>
-            </TouchableOpacity>
-
-            {/* Título centrado */}
-            <Text style={styles.navTitle} numberOfLines={1}>{title}</Text>
-
-            {/* Acción derecha (Editar / Cancelar) */}
-            {(screen === 'PetInfo' || screen === 'PetContact' || (screen === 'PetVetHistory' && vetView === 'detail')) ? (
-              <TouchableOpacity
-                style={styles.navActionBtn}
-                onPress={() => {
-                  if (screen === 'PetVetHistory' && vetView === 'detail') {
-                    if (selectedVetRecord) startEditVetRecord(selectedVetRecord);
-                    return;
-                  }
-                  if (isEditingPetDetail) {
-                    if (selectedPet) {
-                      setPetDraft({
-                        color: selectedPet.color ?? '',
-                        birth_year: selectedPet.birth_year != null ? String(selectedPet.birth_year) : '',
-                        birth_date_text: selectedPet.birth_date_text ?? '',
-                        sex: selectedPet.sex ?? '',
-                        weight_kg: selectedPet.weight_kg != null ? String(selectedPet.weight_kg) : '',
-                        description: selectedPet.description ?? '',
-                        sterilized: selectedPet.sterilized ?? false,
-                        chip_number: selectedPet.chip_number ?? '',
-                        blood_type: selectedPet.blood_type ?? '',
-                        insurance_name: selectedPet.insurance_name ?? '',
-                        insurance_policy: selectedPet.insurance_policy ?? '',
-                        contact_primary_name: selectedPet.contact_primary_name ?? '',
-                        owner_phone: selectedPet.owner_phone ?? '',
-                        contact_secondary_name: selectedPet.contact_secondary_name ?? '',
-                        contact_secondary_phone: selectedPet.contact_secondary_phone ?? '',
-                        owner_whatsapp: selectedPet.owner_whatsapp ?? '',
-                        public_notes: selectedPet.public_notes ?? '',
-                        allergies: selectedPet.allergies ?? '',
-                        medications: selectedPet.medications ?? '',
-                        conditions: selectedPet.conditions ?? '',
-                        vet_name: selectedPet.vet_name ?? '',
-                        vet_phone: selectedPet.vet_phone ?? '',
-                      });
-                    }
-                    setIsEditingPetDetail(false);
-                  } else {
-                    setIsEditingPetDetail(true);
-                  }
-                }}
-                activeOpacity={0.7}
-                hitSlop={{ top: 8, bottom: 8, left: 12, right: 0 }}
-              >
-                <Text style={{ color: isEditingPetDetail ? C.danger : C.primary, fontWeight: '700', fontSize: 15 }}>
-                  {isEditingPetDetail ? 'Cancelar' : 'Editar'}
-                </Text>
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.navActionBtn} />
-            )}
-          </View>
-        ) : null}
-
-        {isFullScreenMap ? (
-          <View style={{ flex: 1 }}>
-            {renderScreen()}
-            {/* Botón atrás flotante sobre el mapa */}
-            <TouchableOpacity
-              style={{ position: 'absolute', top: 14, left: 14, flexDirection: 'row', alignItems: 'center', backgroundColor: C.white, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, shadowColor: '#000', shadowOpacity: 0.15, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 4 }}
-              onPress={handleBack} activeOpacity={0.85}>
-              <Text style={{ fontSize: 22, color: C.primary, lineHeight: 26, marginTop: -2 }}>‹</Text>
-              <Text style={{ fontSize: 14, color: C.primary, fontWeight: '700', marginLeft: 4 }}>Inicio</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <ScrollView
-            contentContainerStyle={styles.scroll}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="interactive"
+    <>
+      {isFullScreen ? (
+        /* Login, Register, NearbyMap, ScanTag — sin SafeAreaView para que el contenido llegue al borde superior */
+        <View style={{ flex: 1, backgroundColor: C.bg }}>
+          {renderScreen()}
+          {/* Botón atrás flotante solo en pantallas de mapa/cámara */}
+          {isFullScreenMap && <TouchableOpacity
+            style={{ position: 'absolute', top: 54, left: 14, flexDirection: 'row', alignItems: 'center', backgroundColor: C.white, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, shadowColor: '#000', shadowOpacity: 0.15, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 4 }}
+            onPress={handleBack} activeOpacity={0.85}>
+            <Text style={{ fontSize: 22, color: C.primary, lineHeight: 26, marginTop: -2 }}>‹</Text>
+            <Text style={{ fontSize: 14, color: C.primary, fontWeight: '700', marginLeft: 4 }}>Inicio</Text>
+          </TouchableOpacity>}
+        </View>
+      ) : (
+        <SafeAreaView style={styles.container}>
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 6 : 0}
           >
-            {renderScreen()}
-          </ScrollView>
-        )}
+            {canGoBack ? (
+              <View style={styles.navBar}>
+                {/* Botón atrás */}
+                <TouchableOpacity style={styles.navBackBtn} onPress={handleBack} activeOpacity={0.7}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <Text style={styles.navBackArrow}>‹</Text>
+                  <Text style={styles.navBackLabel}>Atrás</Text>
+                </TouchableOpacity>
 
-        {loading && <ActivityIndicator style={styles.loader} />}
+                {/* Título centrado */}
+                <Text style={styles.navTitle} numberOfLines={1}>{title}</Text>
 
-        {/* Swipe-back desde borde izquierdo */}
-        {canGoBack && (
-          <View
-            pointerEvents="box-only"
-            style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 30 }}
-            {...swipePan.panHandlers}
-          />
-        )}
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+                {/* Acción derecha (Editar / Cancelar) */}
+                {(screen === 'PetInfo' || screen === 'PetContact' || (screen === 'PetVetHistory' && vetView === 'detail')) ? (
+                  <TouchableOpacity
+                    style={styles.navActionBtn}
+                    onPress={() => {
+                      if (screen === 'PetVetHistory' && vetView === 'detail') {
+                        if (selectedVetRecord) startEditVetRecord(selectedVetRecord);
+                        return;
+                      }
+                      if (isEditingPetDetail) {
+                        if (selectedPet) {
+                          setPetDraft({
+                            color: selectedPet.color ?? '',
+                            birth_year: selectedPet.birth_year != null ? String(selectedPet.birth_year) : '',
+                            birth_date_text: selectedPet.birth_date_text ?? '',
+                            sex: selectedPet.sex ?? '',
+                            weight_kg: selectedPet.weight_kg != null ? String(selectedPet.weight_kg) : '',
+                            description: selectedPet.description ?? '',
+                            sterilized: selectedPet.sterilized ?? false,
+                            chip_number: selectedPet.chip_number ?? '',
+                            blood_type: selectedPet.blood_type ?? '',
+                            insurance_name: selectedPet.insurance_name ?? '',
+                            insurance_policy: selectedPet.insurance_policy ?? '',
+                            contact_primary_name: selectedPet.contact_primary_name ?? '',
+                            owner_phone: selectedPet.owner_phone ?? '',
+                            contact_secondary_name: selectedPet.contact_secondary_name ?? '',
+                            contact_secondary_phone: selectedPet.contact_secondary_phone ?? '',
+                            owner_whatsapp: selectedPet.owner_whatsapp ?? '',
+                            public_notes: selectedPet.public_notes ?? '',
+                            allergies: selectedPet.allergies ?? '',
+                            medications: selectedPet.medications ?? '',
+                            conditions: selectedPet.conditions ?? '',
+                            vet_name: selectedPet.vet_name ?? '',
+                            vet_phone: selectedPet.vet_phone ?? '',
+                          });
+                        }
+                        setIsEditingPetDetail(false);
+                      } else {
+                        setIsEditingPetDetail(true);
+                      }
+                    }}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 8, bottom: 8, left: 12, right: 0 }}
+                  >
+                    <Text style={{ color: isEditingPetDetail ? C.danger : C.primary, fontWeight: '700', fontSize: 15 }}>
+                      {isEditingPetDetail ? 'Cancelar' : 'Editar'}
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={styles.navActionBtn} />
+                )}
+              </View>
+            ) : null}
+
+            <ScrollView
+              contentContainerStyle={styles.scroll}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
+            >
+              {renderScreen()}
+            </ScrollView>
+
+            {loading && <ActivityIndicator style={styles.loader} />}
+
+            {/* Swipe-back desde borde izquierdo */}
+            {canGoBack && (
+              <View
+                pointerEvents="box-only"
+                style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 30 }}
+                {...swipePan.panHandlers}
+              />
+            )}
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      )}
+    </>
   );
 }
 

@@ -60,6 +60,7 @@ export type Pet = {
   species: string;
   breed: string | null;
   is_lost: boolean;
+  is_featured?: boolean;
   photo_url?: string | null;
 
   color?: string | null;
