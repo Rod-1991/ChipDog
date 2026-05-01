@@ -93,6 +93,7 @@ export type Pet = {
   insurance_name?: string | null;
   insurance_policy?: string | null;
 
+  contact_public?: boolean;
   lost_lat?: number | null;
   lost_lng?: number | null;
   lost_radius_meters?: number | null;
@@ -149,6 +150,7 @@ export type LostPetPin = {
   contact_primary_name: string | null;
   owner_phone: string | null;
   owner_whatsapp: string | null;
+  contact_public: boolean;
 };
 
 export type NearbyLostPet = LostPetPin & { distance_m: number };
@@ -181,6 +183,17 @@ export type FoodEntry = {
   food_brand: string;
   started_at: string;
   notes: string | null;
+};
+
+export type PetSighting = {
+  id: number;
+  pet_id: number;
+  user_id: string | null;
+  reporter_name: string;
+  comment: string;
+  lat: number | null;
+  lng: number | null;
+  created_at: string;
 };
 
 export type InfoRowProps = { label: string; value?: string | null };
