@@ -83,6 +83,9 @@ export type Pet = {
   vet_name?: string | null;
   vet_phone?: string | null;
 
+  food_brand?: string | null;
+  food_notes?: string | null;
+
   description?: string | null;
   sterilized?: boolean | null;
   chip_number?: string | null;
@@ -162,6 +165,22 @@ export type VetRecord = {
   description: string;
   attachments: VetAttachment[];
   referencePhotos: string[];
+};
+
+export type WeightEntry = {
+  id: number;
+  pet_id: number;
+  weight_kg: number;
+  measured_at: string;
+  notes: string | null;
+};
+
+export type FoodEntry = {
+  id: number;
+  pet_id: number;
+  food_brand: string;
+  started_at: string;
+  notes: string | null;
 };
 
 export type InfoRowProps = { label: string; value?: string | null };

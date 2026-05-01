@@ -28,6 +28,8 @@ type PetDraft = {
   conditions: string;
   vet_name: string;
   vet_phone: string;
+  food_brand: string;
+  food_notes: string;
 };
 
 type PetContactScreenProps = {

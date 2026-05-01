@@ -1,15 +1,15 @@
 import { Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { styles } from '../styles';
-import { C } from '../constants/colors';
-import { buildCalendarDays, formatBirthDateShort, parseBirthDateText } from '../utils/helpers';
-import Card from '../components/Card';
-import InfoRow from '../components/InfoRow';
-import type { Pet, Screen } from '../types';
+import { styles } from '../../styles';
+import { C } from '../../constants/colors';
+import { buildCalendarDays, formatBirthDateShort, parseBirthDateText } from '../../utils/helpers';
+import Card from '../../components/Card';
+import InfoRow from '../../components/InfoRow';
+import type { Pet } from '../../types';
 
-const SEX_PET_INFO = ['Macho', 'Hembra'];
+const SEX_OPTS = ['Macho', 'Hembra'];
 const BLOOD_TYPES = ['DEA 1.1+', 'DEA 1.1-', 'DEA 1.2+', 'DEA 1.2-', 'No sé'];
 
-type PetDraft = {
+export type PetDraft = {
   color: string;
   birth_year: string;
   birth_date_text: string;
@@ -36,30 +36,27 @@ type PetDraft = {
   food_notes: string;
 };
 
-type PetInfoScreenProps = {
-  selectedPet: Pet | null;
-  isEditingPetDetail: boolean;
+type Props = {
+  selectedPet: Pet;
+  isEditing: boolean;
+  setIsEditing: (v: boolean) => void;
   petDraft: PetDraft;
   setPetDraft: (fn: (p: PetDraft) => PetDraft) => void;
-  showProfileBirthCalendar: boolean;
-  setShowProfileBirthCalendar: (fn: (v: boolean) => boolean) => void;
-  profileBirthCalendarMonth: Date;
-  setProfileBirthCalendarMonth: (fn: (p: Date) => Date) => void;
+  showBirthCalendar: boolean;
+  setShowBirthCalendar: (fn: (v: boolean) => boolean) => void;
+  birthCalendarMonth: Date;
+  setBirthCalendarMonth: (fn: (p: Date) => Date) => void;
   loading: boolean;
   savePetProfile: () => void;
-  setScreen: (s: Screen) => void;
 };
 
-export default function PetInfoScreen({
-  selectedPet, isEditingPetDetail, petDraft, setPetDraft,
-  showProfileBirthCalendar, setShowProfileBirthCalendar,
-  profileBirthCalendarMonth, setProfileBirthCalendarMonth,
+export default function PetInfoTab({
+  selectedPet, isEditing, setIsEditing, petDraft, setPetDraft,
+  showBirthCalendar, setShowBirthCalendar, birthCalendarMonth, setBirthCalendarMonth,
   loading, savePetProfile,
-}: PetInfoScreenProps) {
-  if (!selectedPet) return null;
+}: Props) {
 
-  if (!isEditingPetDetail) {
-    // ── Vista de solo lectura ──
+  if (!isEditing) {
     return (
       <View style={styles.form}>
         <Card title="📋  Identidad" accent={C.primary}>
@@ -68,6 +65,7 @@ export default function PetInfoScreen({
           <InfoRow label="Peso" value={petDraft.weight_kg ? `${petDraft.weight_kg} kg` : null} />
           <InfoRow label="Esterilizado/a" value={petDraft.sterilized ? 'Sí' : 'No'} />
           <InfoRow label="N° de chip / microchip" value={petDraft.chip_number} />
+          <InfoRow label="Color" value={petDraft.color} />
         </Card>
 
         <Card title="🐾  Descripción física" accent={C.accent}>
@@ -87,19 +85,24 @@ export default function PetInfoScreen({
           <InfoRow label="Seguro" value={petDraft.insurance_name} />
           <InfoRow label="N° de póliza" value={petDraft.insurance_policy} />
         </Card>
+
+        <TouchableOpacity
+          style={[styles.btnPrimary, { marginBottom: 8 }]}
+          onPress={() => setIsEditing(true)}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.btnPrimaryText}>✏️  Editar información</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
-  // ── Vista de edición ──
   return (
     <View style={styles.form}>
-
-      {/* ── Identidad ── */}
       <Card title="📋  Identidad" accent={C.primary}>
         <Text style={styles.fieldLabel}>Sexo</Text>
         <View style={{ flexDirection: 'row', gap: 8 }}>
-          {SEX_PET_INFO.map(opt => (
+          {SEX_OPTS.map(opt => (
             <TouchableOpacity key={opt}
               style={[styles.filterChip, { flex: 1, alignItems: 'center' }, petDraft.sex === opt && styles.filterChipActive]}
               onPress={() => setPetDraft(p => ({ ...p, sex: opt }))}>
@@ -121,22 +124,21 @@ export default function PetInfoScreen({
               let clean = v.replace(/[^\d]/g, '');
               if (clean.length > 2) clean = clean.slice(0, 2) + '/' + clean.slice(2);
               if (clean.length > 5) clean = clean.slice(0, 5) + '/' + clean.slice(5);
-              if (clean.length > 10) clean = clean.slice(0, 10);
-              setPetDraft(p => ({ ...p, birth_date_text: clean }));
+              setPetDraft(p => ({ ...p, birth_date_text: clean.slice(0, 10) }));
             }}
           />
-          <TouchableOpacity style={[styles.input, { paddingHorizontal: 14 }]} onPress={() => setShowProfileBirthCalendar(v => !v)}>
-            <Text style={{ fontSize: 20 }}>{showProfileBirthCalendar ? '▲' : '📅'}</Text>
+          <TouchableOpacity style={[styles.input, { paddingHorizontal: 14 }]} onPress={() => setShowBirthCalendar(v => !v)}>
+            <Text style={{ fontSize: 20 }}>{showBirthCalendar ? '▲' : '📅'}</Text>
           </TouchableOpacity>
         </View>
-        {showProfileBirthCalendar && (
+        {showBirthCalendar && (
           <View style={styles.calendarCard}>
             <View style={styles.calendarHeader}>
-              <TouchableOpacity style={styles.calendarArrowBtn} onPress={() => setProfileBirthCalendarMonth(p => new Date(p.getFullYear(), p.getMonth() - 1, 1))}>
+              <TouchableOpacity style={styles.calendarArrowBtn} onPress={() => setBirthCalendarMonth(p => new Date(p.getFullYear(), p.getMonth() - 1, 1))}>
                 <Text style={styles.calendarArrowText}>‹</Text>
               </TouchableOpacity>
-              <Text style={styles.calendarMonthTitle}>{profileBirthCalendarMonth.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })}</Text>
-              <TouchableOpacity style={styles.calendarArrowBtn} onPress={() => setProfileBirthCalendarMonth(p => new Date(p.getFullYear(), p.getMonth() + 1, 1))}>
+              <Text style={styles.calendarMonthTitle}>{birthCalendarMonth.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })}</Text>
+              <TouchableOpacity style={styles.calendarArrowBtn} onPress={() => setBirthCalendarMonth(p => new Date(p.getFullYear(), p.getMonth() + 1, 1))}>
                 <Text style={styles.calendarArrowText}>›</Text>
               </TouchableOpacity>
             </View>
@@ -144,13 +146,18 @@ export default function PetInfoScreen({
               {['L','M','X','J','V','S','D'].map(d => <Text key={d} style={styles.calendarWeekDay}>{d}</Text>)}
             </View>
             <View style={styles.calendarGrid}>
-              {buildCalendarDays(profileBirthCalendarMonth).map((day, idx) => {
-                const selectedDate = parseBirthDateText(petDraft.birth_date_text);
-                const isSelected = selectedDate != null && selectedDate.getFullYear() === profileBirthCalendarMonth.getFullYear() && selectedDate.getMonth() === profileBirthCalendarMonth.getMonth() && selectedDate.getDate() === day;
+              {buildCalendarDays(birthCalendarMonth).map((day, idx) => {
+                const sel = parseBirthDateText(petDraft.birth_date_text);
+                const isSelected = sel != null && sel.getFullYear() === birthCalendarMonth.getFullYear() && sel.getMonth() === birthCalendarMonth.getMonth() && sel.getDate() === day;
                 return (
-                  <TouchableOpacity key={`pd-${idx}`} disabled={!day}
+                  <TouchableOpacity key={`cal-${idx}`} disabled={!day}
                     style={[styles.calendarDayBtn, !day && styles.calendarDayBtnDisabled, isSelected && styles.calendarDayBtnSelected]}
-                    onPress={() => { if (!day) return; const d = new Date(profileBirthCalendarMonth.getFullYear(), profileBirthCalendarMonth.getMonth(), day); setPetDraft(p => ({ ...p, birth_date_text: formatBirthDateShort(d) })); setShowProfileBirthCalendar(() => false); }}>
+                    onPress={() => {
+                      if (!day) return;
+                      const d = new Date(birthCalendarMonth.getFullYear(), birthCalendarMonth.getMonth(), day);
+                      setPetDraft(p => ({ ...p, birth_date_text: formatBirthDateShort(d) }));
+                      setShowBirthCalendar(() => false);
+                    }}>
                     <Text style={[styles.calendarDayText, isSelected && styles.calendarDayTextSelected]}>{day ?? ''}</Text>
                   </TouchableOpacity>
                 );
@@ -161,8 +168,14 @@ export default function PetInfoScreen({
 
         <Text style={styles.fieldLabel}>Peso (kg)</Text>
         <TextInput style={styles.input} placeholder="Ej: 8.5" placeholderTextColor={C.textMuted}
-          value={petDraft.weight_kg} onChangeText={(v) => setPetDraft(p => ({ ...p, weight_kg: v }))}
-          keyboardType="decimal-pad" />
+          value={petDraft.weight_kg} keyboardType="decimal-pad"
+          onChangeText={(v) => setPetDraft(p => ({ ...p, weight_kg: v }))} />
+
+        <Text style={styles.fieldLabel}>Color</Text>
+        <TextInput style={styles.input} placeholder='Ej: "Dorado", "Blanco con manchas negras"'
+          placeholderTextColor={C.textMuted}
+          value={petDraft.color}
+          onChangeText={(v) => setPetDraft(p => ({ ...p, color: v }))} />
 
         <View style={styles.switchRow}>
           <Text style={styles.switchLabel}>✂️  Esterilizado/a</Text>
@@ -170,42 +183,34 @@ export default function PetInfoScreen({
             trackColor={{ false: C.border, true: C.primary }} thumbColor={C.white} />
         </View>
 
-        <Text style={styles.fieldLabel}>Número de chip / microchip</Text>
+        <Text style={styles.fieldLabel}>N° de chip / microchip</Text>
         <TextInput style={styles.input} placeholder="Ej: 985112345678901" placeholderTextColor={C.textMuted}
-          value={petDraft.chip_number} onChangeText={(v) => setPetDraft(p => ({ ...p, chip_number: v }))}
-          keyboardType="number-pad" />
+          value={petDraft.chip_number} keyboardType="number-pad"
+          onChangeText={(v) => setPetDraft(p => ({ ...p, chip_number: v }))} />
       </Card>
 
-      {/* ── Descripción física ── */}
       <Card title="🐾  Descripción física" accent={C.accent}>
         <TextInput style={[styles.input, styles.multiline]} multiline
-          placeholder='Ej: "Blanco con manchas café en el lomo, orejas negras"'
+          placeholder='Ej: "Blanco con manchas café, orejas negras"'
           placeholderTextColor={C.textMuted}
           value={petDraft.description}
           onChangeText={(v) => setPetDraft(p => ({ ...p, description: v }))} />
       </Card>
 
-      {/* ── Salud ── */}
       <Card title="🩺  Salud" accent={C.success}>
         <Text style={styles.fieldLabel}>Alergias</Text>
-        <TextInput style={[styles.input, styles.multiline]} multiline
-          placeholder="Ej: Polen, ciertos antibióticos"
-          placeholderTextColor={C.textMuted}
-          value={petDraft.allergies}
+        <TextInput style={[styles.input, styles.multiline]} multiline placeholder="Ej: Polen, antibióticos"
+          placeholderTextColor={C.textMuted} value={petDraft.allergies}
           onChangeText={(v) => setPetDraft(p => ({ ...p, allergies: v }))} />
 
         <Text style={styles.fieldLabel}>Medicamentos actuales</Text>
-        <TextInput style={[styles.input, styles.multiline]} multiline
-          placeholder="Ej: Frontline mensual, Nexgard"
-          placeholderTextColor={C.textMuted}
-          value={petDraft.medications}
+        <TextInput style={[styles.input, styles.multiline]} multiline placeholder="Ej: Frontline mensual"
+          placeholderTextColor={C.textMuted} value={petDraft.medications}
           onChangeText={(v) => setPetDraft(p => ({ ...p, medications: v }))} />
 
         <Text style={styles.fieldLabel}>Condiciones / enfermedades</Text>
-        <TextInput style={[styles.input, styles.multiline]} multiline
-          placeholder="Ej: Displasia de cadera leve"
-          placeholderTextColor={C.textMuted}
-          value={petDraft.conditions}
+        <TextInput style={[styles.input, styles.multiline]} multiline placeholder="Ej: Displasia leve"
+          placeholderTextColor={C.textMuted} value={petDraft.conditions}
           onChangeText={(v) => setPetDraft(p => ({ ...p, conditions: v }))} />
 
         <Text style={styles.fieldLabel}>Grupo sanguíneo</Text>
@@ -220,23 +225,22 @@ export default function PetInfoScreen({
         </View>
       </Card>
 
-      {/* ── Seguro veterinario ── */}
       <Card title="🛡️  Seguro veterinario" accent={C.warning}>
         <Text style={styles.fieldLabel}>Nombre del seguro</Text>
-        <TextInput style={styles.input} placeholder="Ej: Mapfre Mascotas, BCI Seguros"
-          placeholderTextColor={C.textMuted}
-          value={petDraft.insurance_name}
+        <TextInput style={styles.input} placeholder="Ej: Mapfre Mascotas"
+          placeholderTextColor={C.textMuted} value={petDraft.insurance_name}
           onChangeText={(v) => setPetDraft(p => ({ ...p, insurance_name: v }))} />
-
-        <Text style={styles.fieldLabel}>Número de póliza</Text>
+        <Text style={styles.fieldLabel}>N° de póliza</Text>
         <TextInput style={styles.input} placeholder="Ej: 1234567-8"
-          placeholderTextColor={C.textMuted}
-          value={petDraft.insurance_policy}
+          placeholderTextColor={C.textMuted} value={petDraft.insurance_policy}
           onChangeText={(v) => setPetDraft(p => ({ ...p, insurance_policy: v }))} />
       </Card>
 
       <TouchableOpacity style={styles.btnPrimary} onPress={savePetProfile} disabled={loading} activeOpacity={0.85}>
         <Text style={styles.btnPrimaryText}>{loading ? 'Guardando...' : 'Guardar información'}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.btnGhost} onPress={() => setIsEditing(false)} activeOpacity={0.85}>
+        <Text style={styles.btnGhostText}>Cancelar</Text>
       </TouchableOpacity>
     </View>
   );
