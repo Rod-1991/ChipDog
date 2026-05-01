@@ -1,4 +1,5 @@
-import { Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { useState } from 'react';
+import { Image, Modal, Pressable, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { C } from '../constants/colors';
 import Svg, { Circle } from 'react-native-svg';
 import type { Pet, PetMemberInvitation, Screen, UserProfile } from '../types';
@@ -57,10 +58,22 @@ function PetArcAvatar({ pet, photoUrl, size = 58 }: { pet: Pet; photoUrl: string
   );
 }
 
+type Notification = {
+  id: string;
+  icon: string;
+  title: string;
+  sub: string;
+  action?: () => void;
+  color?: string;
+};
+
 export default function HomeScreen({
   pets, petSignedUrls, userProfile, userName,
   upcomingVaccinesCount, pendingInvitations, handleLogout, loadPetDetail, setScreen,
 }: HomeScreenProps) {
+  const [showNotifs, setShowNotifs] = useState(false);
+  const [notifsRead, setNotifsRead] = useState(false);
+
   // Nombre y apellido
   const firstName = userProfile?.first_name || userName?.split(' ')[0] || '';
   const lastName = userProfile?.last_name || userName?.split(' ')[1] || '';
@@ -80,6 +93,72 @@ export default function HomeScreen({
   const profileFields = [userProfile?.first_name, userProfile?.last_name, userProfile?.phone, userProfile?.rut, userProfile?.commune, userProfile?.sex, userProfile?.birth_year];
   const profileComplete = profileFields.filter(Boolean).length === profileFields.length;
 
+  // ── Notificaciones ────────────────────────────────────────────────────────
+  const notifications: Notification[] = [
+    {
+      id: 'welcome',
+      icon: '🐾',
+      title: `¡Bienvenido a ChipDog, ${displayName}!`,
+      sub: 'Ya eres parte de ChipDog. Miles de mascotas en Chile tienen su hogar digital — ahora la tuya también.',
+      color: C.primaryLight,
+      action: () => setShowNotifs(false),
+    },
+  ];
+
+  // Perfil de usuario incompleto
+  if (!profileComplete) {
+    notifications.push({
+      id: 'profile',
+      icon: '👤',
+      title: 'Completa tu perfil',
+      sub: 'Faltan datos personales — te toma 1 minuto',
+      action: () => { setShowNotifs(false); setScreen('Profile'); },
+      color: C.primaryLight,
+    });
+  }
+
+  // Mascotas con perfil incompleto
+  pets.forEach(pet => {
+    const fields = [pet.breed, pet.color, pet.birth_year, pet.weight_kg, pet.photo_url];
+    const pct = fields.filter(Boolean).length / fields.length;
+    if (pct < 0.6) {
+      notifications.push({
+        id: `pet-${pet.id}`,
+        icon: pet.species === 'cat' ? '🐈' : '🐕',
+        title: `Perfil de ${pet.name} incompleto`,
+        sub: `Falta raza, color, peso o foto`,
+        action: () => { setShowNotifs(false); loadPetDetail(pet.id).then(() => setScreen('PetDetail')); },
+        color: '#F3EEFF',
+      });
+    }
+  });
+
+  // Vacunas próximas
+  if (upcomingVaccinesCount > 0) {
+    notifications.push({
+      id: 'vaccines',
+      icon: '💉',
+      title: `${upcomingVaccinesCount} vacuna${upcomingVaccinesCount > 1 ? 's' : ''} próxima${upcomingVaccinesCount > 1 ? 's' : ''}`,
+      sub: 'Vence en los próximos 30 días',
+      action: () => { setShowNotifs(false); setScreen('PetList'); },
+      color: '#FFF8E1',
+    });
+  }
+
+  // Invitaciones pendientes
+  if (pendingInvitations.length > 0) {
+    notifications.push({
+      id: 'invites',
+      icon: '📩',
+      title: `${pendingInvitations.length} invitación${pendingInvitations.length > 1 ? 'es' : ''} pendiente${pendingInvitations.length > 1 ? 's' : ''}`,
+      sub: 'Te invitaron como co-dueño',
+      action: () => { setShowNotifs(false); setScreen('Profile'); },
+      color: '#E0FAF6',
+    });
+  }
+
+  const notifCount = notifications.length;
+
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 90 }}>
@@ -96,13 +175,23 @@ export default function HomeScreen({
               <Text style={{ color: C.dark }}>Dog</Text>
               <Text> 🐾</Text>
             </Text>
-            <TouchableOpacity onPress={handleLogout} activeOpacity={0.8}>
+            <TouchableOpacity onPress={() => { setShowNotifs(true); setNotifsRead(true); }} activeOpacity={0.8}>
               <View style={{
                 width: 36, height: 36, borderRadius: 18,
                 backgroundColor: 'rgba(255,255,255,0.2)',
                 alignItems: 'center', justifyContent: 'center',
               }}>
-                <Text style={{ fontSize: 14, fontWeight: '900', color: C.white }}>{initials}</Text>
+                <Text style={{ fontSize: 18 }}>🔔</Text>
+                {notifCount > 0 && !notifsRead && (
+                  <View style={{
+                    position: 'absolute', top: 0, right: 0,
+                    width: 14, height: 14, borderRadius: 7,
+                    backgroundColor: '#FF4757', borderWidth: 2, borderColor: C.primaryDark,
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <Text style={{ fontSize: 8, fontWeight: '900', color: '#fff' }}>{notifCount}</Text>
+                  </View>
+                )}
               </View>
             </TouchableOpacity>
           </View>
@@ -230,57 +319,91 @@ export default function HomeScreen({
             </>
           )}
 
-          {/* Accesos rápidos */}
+          {/* Acciones rápidas */}
           <Text style={{ fontSize: 11, fontWeight: '800', color: C.textMuted, textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 16, marginBottom: 8 }}>
-            Accesos rápidos
+            Acciones rápidas
           </Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-            {[
-              {
-                icon: '🗺️', title: 'Mapa perdidos', sub: 'Alertas cercanas',
-                screen: 'NearbyMap' as Screen,
-                badge: null,
-              },
-              {
-                icon: '📷', title: 'Escanear tag', sub: 'Encontré mascota',
-                screen: 'FoundTag' as Screen,
-                badge: null,
-              },
-              {
-                icon: '💉', title: 'Vacunas', sub: 'Vencimientos',
-                screen: 'PetList' as Screen,
-                badge: upcomingVaccinesCount > 0 ? { label: `${upcomingVaccinesCount} próxima${upcomingVaccinesCount > 1 ? 's' : ''}`, color: '#FFF8E1', text: '#7A4500' } : null,
-              },
-              {
-                icon: '👤', title: 'Mi perfil', sub: 'Datos personales',
-                screen: 'Profile' as Screen,
-                badge: { label: profileComplete ? 'Completo' : 'Incompleto', color: profileComplete ? C.primaryLight : '#FFF0E6', text: profileComplete ? C.primaryDark : '#7A3A10' },
-              },
-            ].map(item => (
+          <View style={{ gap: 10 }}>
+            {/* Fila superior: 2 botones */}
+            <View style={{ flexDirection: 'row', gap: 10 }}>
               <TouchableOpacity
-                key={item.title}
-                style={{
-                  width: '47.5%', backgroundColor: C.white,
-                  borderRadius: 18, padding: 14, paddingHorizontal: 12,
-                  borderWidth: 1, borderColor: C.border,
-                }}
-                activeOpacity={0.85}
-                onPress={() => setScreen(item.screen)}
-              >
-                <Text style={{ fontSize: 26, marginBottom: 7 }}>{item.icon}</Text>
-                <Text style={{ fontSize: 13, fontWeight: '800', color: C.dark }}>{item.title}</Text>
-                <Text style={{ fontSize: 11, color: C.textMuted, fontWeight: '600', marginTop: 2 }}>{item.sub}</Text>
-                {item.badge && (
-                  <View style={{ backgroundColor: item.badge.color, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start', marginTop: 6 }}>
-                    <Text style={{ fontSize: 10, fontWeight: '800', color: item.badge.text }}>{item.badge.label}</Text>
-                  </View>
-                )}
+                style={{ flex: 1, backgroundColor: C.primaryDark, borderRadius: 18, padding: 16 }}
+                activeOpacity={0.85} onPress={() => setScreen('FoundTag')}>
+                <Text style={{ fontSize: 28, marginBottom: 8 }}>📷</Text>
+                <Text style={{ fontSize: 14, fontWeight: '900', color: C.white }}>Escanear tag</Text>
+                <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.65)', fontWeight: '600', marginTop: 2 }}>Encontré una mascota</Text>
               </TouchableOpacity>
-            ))}
+              <TouchableOpacity
+                style={{ flex: 1, backgroundColor: C.white, borderRadius: 18, padding: 16, borderWidth: 1, borderColor: C.border }}
+                activeOpacity={0.85} onPress={() => setScreen('AddPet')}>
+                <Text style={{ fontSize: 28, marginBottom: 8 }}>➕</Text>
+                <Text style={{ fontSize: 14, fontWeight: '900', color: C.dark }}>Agregar mascota</Text>
+                <Text style={{ fontSize: 11, color: C.textMuted, fontWeight: '600', marginTop: 2 }}>Registrar nuevo compañero</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
         </View>
       </ScrollView>
+
+      {/* Panel notificaciones */}
+      <Modal visible={showNotifs} transparent animationType="fade" onRequestClose={() => setShowNotifs(false)}>
+        <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' }} onPress={() => setShowNotifs(false)}>
+          <Pressable onPress={() => {}} style={{
+            position: 'absolute', top: 100, right: 16, left: 16,
+            backgroundColor: C.white, borderRadius: 24,
+            shadowColor: '#000', shadowOpacity: 0.2, shadowOffset: { width: 0, height: 8 }, shadowRadius: 20,
+            elevation: 12, overflow: 'hidden',
+          }}>
+            {/* Header del panel */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+              paddingHorizontal: 18, paddingVertical: 14,
+              borderBottomWidth: 1, borderBottomColor: C.border }}>
+              <Text style={{ fontSize: 15, fontWeight: '900', color: C.dark }}>Notificaciones</Text>
+              {notifCount > 0 && (
+                <View style={{ backgroundColor: '#FF4757', borderRadius: 10,
+                  paddingHorizontal: 10, paddingVertical: 3 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '900', color: '#fff' }}>{notifCount}</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Lista */}
+            {notifications.length === 0 ? (
+              <View style={{ padding: 28, alignItems: 'center' }}>
+                <Text style={{ fontSize: 32 }}>✅</Text>
+                <Text style={{ color: C.textMuted, fontSize: 13, fontWeight: '700', marginTop: 8 }}>
+                  Todo al día, sin pendientes
+                </Text>
+              </View>
+            ) : (
+              notifications.map((n, i) => (
+                <TouchableOpacity key={n.id}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 12,
+                    paddingHorizontal: 18, paddingVertical: 13,
+                    borderBottomWidth: i < notifications.length - 1 ? 1 : 0,
+                    borderBottomColor: C.border,
+                    backgroundColor: n.color ?? C.white,
+                  }}
+                  activeOpacity={0.75}
+                  onPress={n.action ?? (() => setShowNotifs(false))}>
+                  <View style={{ width: 38, height: 38, borderRadius: 19,
+                    backgroundColor: 'rgba(255,255,255,0.7)',
+                    alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 20 }}>{n.icon}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: C.dark }}>{n.title}</Text>
+                    <Text style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>{n.sub}</Text>
+                  </View>
+                  <Text style={{ fontSize: 18, color: C.textMuted }}>›</Text>
+                </TouchableOpacity>
+              ))
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* Navbar inferior */}
       <View style={{

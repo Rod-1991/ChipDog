@@ -1136,7 +1136,7 @@ export default function App() {
     const { error } = await supabase.from('pets').insert({
       owner_id: user.id,
       name: petForm.name.trim(),
-      species: petForm.species,
+      species: petForm.species === 'Perro' ? 'dog' : 'cat',
       breed: petForm.breed || null,
       sex: petForm.sex || null,
       description: petForm.description.trim(),
