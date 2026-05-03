@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
   PanResponder,
   SafeAreaView,
   ScrollView,
@@ -12,7 +13,7 @@ import {
   View,
   Linking,
 } from 'react-native';
-import { linkTagSchema, loginSchema } from '@chipdog/shared';
+import { loginSchema } from '@chipdog/shared';
 import { supabase, vetAttachmentsBucket } from './lib/supabase';
 import { C } from './constants/colors';
 import {
@@ -55,12 +56,10 @@ import { useCameraPermissions } from 'expo-camera';
 // NFC: carga dinámica — no disponible en Expo Go
 let NfcManager: any = null;
 let NfcTech: any = null;
-let Ndef: any = null;
 try {
   const nfc = require('react-native-nfc-manager');
   NfcManager = nfc.default;
   NfcTech = nfc.NfcTech;
-  Ndef = nfc.Ndef;
 } catch { /* Expo Go o dispositivo sin NFC */ }
 
 Notifications.setNotificationHandler({
@@ -147,9 +146,7 @@ export default function App() {
   const [showSexPetDropdown, setShowSexPetDropdown] = useState(false);
   const [birthDateText, setBirthDateText] = useState('');
 
-  const [tagCode, setTagCode] = useState('');
-  const [linkTagCode, setLinkTagCode] = useState('');
-  const [linkTagMode, setLinkTagMode] = useState<'choose' | 'nfc' | 'qr'>('choose');
+  const [petTags, setPetTags] = useState<{ id: number; code: string }[]>([]);
   const [nfcStatus, setNfcStatus] = useState<'idle' | 'scanning' | 'success' | 'error'>('idle');
   const [nfcError, setNfcError] = useState('');
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
@@ -821,21 +818,11 @@ export default function App() {
         alertMessage: 'Acerca el iPhone al tag NFC del collar'
       });
       const tag = await NfcManager.getTag();
-      const ndefRecords = tag?.ndefMessage ?? [];
-      let raw = '';
-      for (const record of ndefRecords) {
-        if (record.payload) {
-          const payload = new Uint8Array(record.payload);
-          // Los tags de ChipDog se graban como URI records
-          raw = Ndef.uri?.decodePayload
-            ? Ndef.uri.decodePayload(payload)
-            : String.fromCharCode(...payload.slice(1));
-          if (raw) break;
-        }
-      }
-      const code = extractCodeFromUrl(raw);
-      if (!code) { Alert.alert('Tag sin código', 'No se pudo leer el código del tag.'); return; }
-      await lookupTagCode(code);
+      const uid = tag?.id
+        ? Array.from(tag.id as number[]).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase()
+        : null;
+      if (!uid) { Alert.alert('Tag sin UID', 'No se pudo leer el identificador del tag.'); return; }
+      await lookupTagCode(uid);
     } catch (e: any) {
       if (e?.message !== 'cancelled') Alert.alert('Error NFC', e?.message ?? 'No se pudo leer el tag.');
     } finally {
@@ -1156,42 +1143,38 @@ export default function App() {
     setScreen('PetList');
   };
 
-  const generateTagCode = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let code = 'CD-';
-    for (let i = 0; i < 5; i++) code += chars[Math.floor(Math.random() * chars.length)];
-    return code;
-  };
-
-  const extractCodeFromUrl = (raw: string): string => {
-    const match = raw.match(/\/tag\/([A-Z0-9-]+)/i);
+  const extractUidFromUrl = (raw: string): string => {
+    const match = raw.match(/\/tag\/([A-Za-z0-9:-]+)/i);
     return match ? match[1].toUpperCase() : raw.trim().toUpperCase();
   };
 
-  const saveLinkTagCode = async (code: string) => {
+  const fetchPetTags = async (petId: number) => {
+    const { data } = await supabase
+      .from('tags').select('id, code').eq('pet_id', petId).eq('status', 'linked');
+    setPetTags(data ?? []);
+  };
+
+  const linkTagByUid = async (uid: string): Promise<boolean> => {
     if (!selectedPet) { Alert.alert('Error', 'No hay mascota seleccionada.'); return false; }
+    if (!uid?.trim()) { Alert.alert('Error', 'No se pudo leer el UID del tag.'); return false; }
     setLoading(true);
     try {
       const { data: existing } = await supabase
-        .from('tags').select('id, pet_id').eq('code', code).maybeSingle();
-
-      if (!existing) {
-        const { error } = await supabase.from('tags')
-          .insert({ code, pet_id: selectedPet.id, status: 'linked' });
-        if (error) throw error;
-      } else if (!existing.pet_id || existing.pet_id === selectedPet.id) {
-        const { error } = await supabase.from('tags')
-          .update({ pet_id: selectedPet.id, status: 'linked' }).eq('code', code);
-        if (error) throw error;
-      } else {
-        // Vinculado a otra mascota — bloqueo total
-        Alert.alert(
-          '🔒 Tag no disponible',
-          `El tag ${code} ya está registrado con otra mascota y no puede ser reutilizado.\n\nCada tag físico pertenece de por vida a una sola mascota.`,
-          [{ text: 'Entendido', style: 'cancel' }]
-        );
+        .from('tags').select('id, pet_id').eq('code', uid).maybeSingle();
+      if (existing && existing.pet_id && existing.pet_id !== selectedPet.id) {
+        Alert.alert('🔒 Tag no disponible', 'Este tag ya está vinculado a otra mascota.');
         return false;
       }
+      if (existing) {
+        const { error } = await supabase.from('tags')
+          .update({ pet_id: selectedPet.id, status: 'linked' }).eq('id', existing.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('tags')
+          .insert({ code: uid, pet_id: selectedPet.id, status: 'linked' });
+        if (error) throw error;
+      }
+      await fetchPetTags(selectedPet.id);
       return true;
     } catch (err: any) {
       Alert.alert('Error', err?.message ?? 'No se pudo vincular el tag.');
@@ -1201,56 +1184,56 @@ export default function App() {
     }
   };
 
-  const writeNfcTag = async () => {
+  const unlinkTag = async (tagId: number) => {
+    if (!selectedPet) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('tags').delete().eq('id', tagId);
+      if (error) throw error;
+      await fetchPetTags(selectedPet.id);
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'No se pudo desvincular el tag.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const readNfcTagForLink = async () => {
     if (!NfcManager) {
       Alert.alert('NFC no disponible', 'Requiere la app instalada desde TestFlight, no Expo Go.');
       return;
     }
-    const url = `https://chipdog.app/tag/${linkTagCode}`;
     setNfcStatus('scanning');
     setNfcError('');
     let sessionStarted = false;
     try {
       const supported = await NfcManager.isSupported();
-      if (!supported) {
-        setNfcStatus('error');
-        setNfcError('Este dispositivo no tiene chip NFC.');
-        return;
-      }
+      if (!supported) { setNfcStatus('error'); setNfcError('Este dispositivo no tiene chip NFC.'); return; }
       await NfcManager.start();
       sessionStarted = true;
       await NfcManager.requestTechnology(NfcTech.Ndef, {
         alertMessage: 'Acerca el iPhone al tag NFC de ChipDog'
       });
-      const bytes = Ndef.encodeMessage([Ndef.uriRecord(url)]);
-      await NfcManager.ndefHandler.writeNdefMessage(bytes);
-      // Intentar bloquear el chip contra reescritura (funciona en Android; iOS no lo soporta)
-      try { await NfcManager.ndefHandler.makeReadOnly(); } catch (_) {}
-      await NfcManager.setAlertMessageIOS('Tag grabado ✅');
-      // Guardar en Supabase
-      const ok = await saveLinkTagCode(linkTagCode);
+      const tag = await NfcManager.getTag();
+      const uid = tag?.id
+        ? Array.from(tag.id as number[]).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase()
+        : null;
+      if (!uid) { setNfcStatus('error'); setNfcError('No se pudo leer el UID del tag.'); return; }
+      await NfcManager.setAlertMessageIOS('Tag leído ✅');
+      const ok = await linkTagByUid(uid);
       if (ok) setNfcStatus('success');
+      else setNfcStatus('idle');
     } catch (err: any) {
       const msg = err?.message ?? '';
       if (msg.toLowerCase().includes('cancel') || msg.toLowerCase().includes('user')) {
         setNfcStatus('idle');
       } else {
         setNfcStatus('error');
-        setNfcError(msg || 'No se pudo escribir el tag NFC.');
+        setNfcError(msg || 'No se pudo leer el tag NFC.');
       }
     } finally {
-      if (sessionStarted) {
-        await NfcManager.cancelTechnologyRequest().catch(() => {});
-      }
+      if (sessionStarted) await NfcManager.cancelTechnologyRequest().catch(() => {});
     }
-  };
-
-  const handleLinkTag = async () => {
-    // Compatibilidad con el flujo manual (TagCode input legacy)
-    const parsed = linkTagSchema.safeParse({ code: tagCode });
-    if (!parsed.success) { Alert.alert('Validación', parsed.error.errors[0]?.message ?? 'Código inválido'); return; }
-    const ok = await saveLinkTagCode(parsed.data.code);
-    if (ok) { setTagCode(''); setScreen('PetDetail'); }
   };
 
   // (Se mantienen por si los usas en FoundResult más adelante)
@@ -1763,13 +1746,12 @@ export default function App() {
     fetchVaccines(selectedPet.id);
     fetchWeightHistory(selectedPet.id);
     fetchFoodHistory(selectedPet.id);
+    fetchPetTags(selectedPet.id);
   }, [screen, selectedPet?.id]);
 
-  // LinkTag — generar código y resetear estado
+  // LinkTag — resetear estado NFC al entrar
   useEffect(() => {
     if (screen === 'LinkTag') {
-      setLinkTagCode(generateTagCode());
-      setLinkTagMode('choose');
       setNfcStatus('idle');
       setNfcError('');
     }
@@ -2103,11 +2085,11 @@ export default function App() {
           saveVetRecord={saveVetRecord} deleteVetRecord={deleteVetRecord} resetVetForm={resetVetForm}
           addPhotoAttachmentToForm={addPhotoAttachmentToForm} addPdfAttachmentToForm={addPdfAttachmentToForm}
           renderEditableAttachmentChip={renderEditableAttachmentChip} renderAttachmentChip={renderAttachmentChip}
-          linkTagCode={linkTagCode}
-          linkTagMode={linkTagMode} setLinkTagMode={setLinkTagMode}
+          petTags={petTags}
           nfcStatus={nfcStatus} setNfcStatus={setNfcStatus}
           nfcError={nfcError} setNfcError={setNfcError}
-          writeNfcTag={writeNfcTag} saveLinkTagCode={saveLinkTagCode}
+          readNfcTagForLink={readNfcTagForLink} unlinkTag={unlinkTag}
+          fetchPetTags={fetchPetTags}
           weightHistory={weightHistory} foodHistory={foodHistory}
           saveWeightEntry={saveWeightEntry} deleteWeightEntry={deleteWeightEntry}
           saveFoodEntry={saveFoodEntry} deleteFoodEntry={deleteFoodEntry}
@@ -2171,14 +2153,11 @@ export default function App() {
     if (screen === 'LinkTag') {
       return (
         <LinkTagScreen
-          linkTagCode={linkTagCode}
-          linkTagMode={linkTagMode} setLinkTagMode={setLinkTagMode}
           nfcStatus={nfcStatus} setNfcStatus={setNfcStatus}
           nfcError={nfcError} setNfcError={setNfcError}
           selectedPet={selectedPet}
           loading={loading}
-          writeNfcTag={writeNfcTag}
-          saveLinkTagCode={saveLinkTagCode}
+          readNfcTagForLink={readNfcTagForLink}
           setScreen={setScreen}
         />
       );
@@ -2192,7 +2171,7 @@ export default function App() {
           requestCameraPermission={requestCameraPermission}
           qrScanned={qrScanned} setQrScanned={setQrScanned}
           onBarcodeScanned={(data) => {
-            const code = extractCodeFromUrl(data);
+            const code = extractUidFromUrl(data);
             setFoundCode(code);
             lookupTagCode(code);
           }}
@@ -2300,6 +2279,7 @@ export default function App() {
               contentContainerStyle={styles.scroll}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="interactive"
+              onScrollBeginDrag={Keyboard.dismiss}
             >
               {renderScreen()}
             </ScrollView>

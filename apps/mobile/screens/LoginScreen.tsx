@@ -1,4 +1,4 @@
-import { Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { C } from '../constants/colors';
 import type { Screen } from '../types';
 
@@ -19,7 +19,9 @@ export default function LoginScreen({
   showPassword, setShowPassword, handleLogin, setScreen,
 }: LoginScreenProps) {
   return (
-    <View style={{ flex: 1, backgroundColor: C.bg }}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1 }}>
 
       {/* Header */}
       <View style={{
@@ -114,6 +116,8 @@ export default function LoginScreen({
         </TouchableOpacity>
 
       </View>
-    </View>
+    </ScrollView>
+    </TouchableWithoutFeedback>
+    </KeyboardAvoidingView>
   );
 }

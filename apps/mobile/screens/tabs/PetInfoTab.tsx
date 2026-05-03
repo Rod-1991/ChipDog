@@ -48,12 +48,13 @@ type Props = {
   setBirthCalendarMonth: (fn: (p: Date) => Date) => void;
   loading: boolean;
   savePetProfile: () => void;
+  petTags: { id: number; code: string }[];
 };
 
 export default function PetInfoTab({
   selectedPet, isEditing, setIsEditing, petDraft, setPetDraft,
   showBirthCalendar, setShowBirthCalendar, birthCalendarMonth, setBirthCalendarMonth,
-  loading, savePetProfile,
+  loading, savePetProfile, petTags,
 }: Props) {
 
   if (!isEditing) {
@@ -66,6 +67,23 @@ export default function PetInfoTab({
           <InfoRow label="Esterilizado/a" value={petDraft.sterilized ? 'Sí' : 'No'} />
           <InfoRow label="N° de chip / microchip" value={petDraft.chip_number} />
           <InfoRow label="Color" value={petDraft.color} />
+          {petTags.length > 0 && petTags.map((tag, i) => (
+            <View key={tag.id} style={{ flexDirection: 'row', justifyContent: 'space-between',
+              alignItems: 'center', paddingVertical: 6,
+              borderTopWidth: i === 0 ? 1 : 0, borderTopColor: C.border, marginTop: i === 0 ? 4 : 0 }}>
+              <Text style={{ fontSize: 12, color: C.primary, fontWeight: '700' }}>
+                Tag NFC {petTags.length > 1 ? i + 1 : ''}
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={{ backgroundColor: '#D1FAE5', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: C.success }}>Activo</Text>
+                </View>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: C.dark, letterSpacing: 0.5 }}>
+                  {tag.code.length > 12 ? `${tag.code.slice(0, 12)}…` : tag.code}
+                </Text>
+              </View>
+            </View>
+          ))}
         </Card>
 
         <Card title="🐾  Descripción física" accent={C.accent}>

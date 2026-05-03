@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, Image, Linking, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, KeyboardAvoidingView, Linking, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { C } from '../constants/colors';
 import { styles } from '../styles';
 import type { LostPetPin, PetSighting, Screen } from '../types';
@@ -51,8 +51,9 @@ export default function LostPetDetailScreen({
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}
+        keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive">
 
         {/* Foto / Hero con header encima */}
         <View style={{ height: 260 }}>
@@ -233,6 +234,6 @@ export default function LostPetDetailScreen({
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }

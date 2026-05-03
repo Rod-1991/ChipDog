@@ -1,4 +1,4 @@
-import { ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { styles } from '../styles';
 import { C } from '../constants/colors';
 import { COMUNAS_CHILE } from '../constants/comunas';
@@ -49,7 +49,9 @@ export default function RegisterScreen({
   handleRegisterStep1, handleRegister, setScreen,
 }: RegisterScreenProps) {
   return (
-    <View style={styles.loginWrap}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.loginWrap, { paddingHorizontal: 22, paddingBottom: 40 }]}>
       {/* Brand + paso */}
       <View style={styles.loginBrand}>
         <Text style={styles.loginEmoji}>🐾</Text>
@@ -203,6 +205,8 @@ export default function RegisterScreen({
           </TouchableOpacity>
         </View>
       )}
-    </View>
+    </ScrollView>
+    </TouchableWithoutFeedback>
+    </KeyboardAvoidingView>
   );
 }

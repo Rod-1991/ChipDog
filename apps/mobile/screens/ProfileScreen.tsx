@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { styles } from '../styles';
 import { C } from '../constants/colors';
@@ -66,7 +66,7 @@ export default function ProfileScreen({
   // ── MODO EDICIÓN (pantalla completa) ─────────────────────────────────────
   if (isEditingProfile) {
     return (
-      <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         {/* Header */}
         <View style={{ backgroundColor: C.primaryDark, paddingTop: 56, paddingBottom: 16,
           paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
@@ -77,7 +77,8 @@ export default function ProfileScreen({
           <Text style={{ fontSize: 18, fontWeight: '900', color: C.white, flex: 1 }}>Editar perfil</Text>
         </View>
 
-        <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}
+        <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive"
+          showsVerticalScrollIndicator={false}
           contentContainerStyle={{ padding: 16, paddingBottom: 40, gap: 12 }}>
 
           {/* Datos personales */}
@@ -175,7 +176,7 @@ export default function ProfileScreen({
             <Text style={styles.btnGhostText}>Cancelar</Text>
           </TouchableOpacity>
         </ScrollView>
-      </View>
+      </KeyboardAvoidingView>
     );
   }
 
