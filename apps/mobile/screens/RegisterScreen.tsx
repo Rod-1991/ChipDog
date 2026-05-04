@@ -69,12 +69,12 @@ export default function RegisterScreen({
             <View style={[styles.loginInputWrap, { flex: 1 }]}>
               <Text style={styles.loginInputLabel}>Nombre</Text>
               <TextInput value={registerForm.firstName} onChangeText={(v) => setRegisterForm(p => ({ ...p, firstName: v }))}
-                style={styles.loginInput} placeholder="Rodrigo" placeholderTextColor={C.textMuted} autoCorrect={false} autoComplete="off" textContentType="none" />
+                style={styles.loginInput} placeholder="María" placeholderTextColor={C.textMuted} autoCorrect={false} autoComplete="off" textContentType="none" />
             </View>
             <View style={[styles.loginInputWrap, { flex: 1 }]}>
               <Text style={styles.loginInputLabel}>Apellido</Text>
               <TextInput value={registerForm.lastName} onChangeText={(v) => setRegisterForm(p => ({ ...p, lastName: v }))}
-                style={styles.loginInput} placeholder="Arriagada" placeholderTextColor={C.textMuted} autoCorrect={false} autoComplete="off" textContentType="none" />
+                style={styles.loginInput} placeholder="González" placeholderTextColor={C.textMuted} autoCorrect={false} autoComplete="off" textContentType="none" />
             </View>
           </View>
 

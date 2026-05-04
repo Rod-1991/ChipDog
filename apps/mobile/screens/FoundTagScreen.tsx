@@ -22,7 +22,7 @@ export default function FoundTagScreen({
     <View style={styles.foundWrap}>
       <Text style={styles.foundEmoji}>🐕</Text>
       <Text style={styles.foundTitle}>¿Encontraste a alguien?</Text>
-      <Text style={styles.foundSubtitle}>Escanea el tag NFC, el QR del collar o ingresa el código</Text>
+      <Text style={styles.foundSubtitle}>Escanea el tag NFC, el QR del collar o ingresa el código / N° de chip RFID</Text>
 
       {/* Botón NFC */}
       <TouchableOpacity
@@ -43,13 +43,13 @@ export default function FoundTagScreen({
       {/* Divisor */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, width: '100%', marginVertical: 4 }}>
         <View style={{ flex: 1, height: 1, backgroundColor: C.border }} />
-        <Text style={{ color: C.textMuted, fontSize: 13, fontWeight: '600' }}>o ingresa el código</Text>
+        <Text style={{ color: C.textMuted, fontSize: 13, fontWeight: '600' }}>o ingresa el código / chip RFID</Text>
         <View style={{ flex: 1, height: 1, backgroundColor: C.border }} />
       </View>
 
       <TextInput
         style={[styles.input, { width: '100%' }]}
-        placeholder="Ej: CD-A3F9K"
+        placeholder="Código tag o N° chip RFID"
         placeholderTextColor={C.textMuted}
         value={foundCode}
         onChangeText={setFoundCode}

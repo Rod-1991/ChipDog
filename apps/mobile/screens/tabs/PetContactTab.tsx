@@ -62,7 +62,7 @@ export default function PetContactTab({
       {publicBanner}
       <Card title="📞  Contacto principal" accent={C.primary}>
         <Text style={styles.fieldLabel}>Nombre</Text>
-        <TextInput style={styles.input} placeholder="Ej: Rodrigo Arriagada" placeholderTextColor={C.textMuted}
+        <TextInput style={styles.input} placeholder="Ej: María González" placeholderTextColor={C.textMuted}
           value={petDraft.contact_primary_name} onChangeText={(v) => setPetDraft(p => ({ ...p, contact_primary_name: v }))} />
         <Text style={styles.fieldLabel}>Teléfono</Text>
         <TextInput style={styles.input} placeholder="+56912345678" placeholderTextColor={C.textMuted}

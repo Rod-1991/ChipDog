@@ -156,6 +156,7 @@ export default function App() {
   const [lostRadius, setLostRadius] = useState(500);
   const mapRef = useRef<MapView>(null);
 
+  const [isInitializing, setIsInitializing] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [userName, setUserName] = useState<string | null>(null);
@@ -746,15 +747,14 @@ export default function App() {
         if (data.session) {
           setUserId(data.session.user.id);
           setIsLoggedIn(true);
-          await fetchPets();
-          await fetchUpcomingVaccines();
+          await Promise.all([fetchPets(), fetchUpcomingVaccines(), loadUserName(), loadUserProfile()]);
           if (!mounted) return;
           setScreen('Home');
         } else {
           setScreen('Login');
         }
       } finally {
-        if (mounted) setLoading(false);
+        if (mounted) { setLoading(false); setIsInitializing(false); }
       }
     };
 
@@ -786,17 +786,31 @@ export default function App() {
   }, []);
 
   const lookupTagCode = async (code: string) => {
-    if (!code) { Alert.alert('Ingresa el código del tag'); return; }
+    if (!code) { Alert.alert('Ingresa el código o número de chip'); return; }
     setLoading(true);
-    const { data, error } = await supabase.rpc('get_pet_public_by_tag', { p_code: code });
-    setLoading(false);
-    if (error) { Alert.alert('Error', error.message); return; }
-    if (!data || data.length === 0) {
-      Alert.alert('No encontrado', 'Este tag no está registrado o no tiene una mascota vinculada.');
-      return;
+    try {
+      // 1. Buscar por tag NFC/QR
+      const { data: tagData, error: tagError } = await supabase.rpc('get_pet_public_by_tag', { p_code: code });
+      if (tagError) throw tagError;
+      if (tagData && tagData.length > 0) {
+        setFoundPet(tagData[0]);
+        setScreen('FoundResult');
+        return;
+      }
+      // 2. Si no encontró, buscar por número de chip RFID
+      const { data: chipData, error: chipError } = await supabase.rpc('get_pet_public_by_chip', { p_chip: code });
+      if (chipError) throw chipError;
+      if (chipData && chipData.length > 0) {
+        setFoundPet(chipData[0]);
+        setScreen('FoundResult');
+        return;
+      }
+      Alert.alert('No encontrado', 'No hay ninguna mascota registrada con ese tag o número de chip.');
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Error al buscar la mascota.');
+    } finally {
+      setLoading(false);
     }
-    setFoundPet(data[0]);
-    setScreen('FoundResult');
   };
 
   const handleFoundLookup = async () => {
@@ -846,10 +860,7 @@ export default function App() {
       return;
     }
 
-    await fetchPets();
-    await fetchUpcomingVaccines();
-    await registerPushToken();
-    await loadUserName();
+    await Promise.all([fetchPets(), fetchUpcomingVaccines(), registerPushToken(), loadUserName(), loadUserProfile()]);
     setIsLoggedIn(true);
     setScreen('Home');
   };
@@ -1050,10 +1061,7 @@ export default function App() {
       }
 
       if (data.session) {
-        await fetchPets();
-        await fetchUpcomingVaccines();
-        await registerPushToken();
-        await loadUserName();
+        await Promise.all([fetchPets(), fetchUpcomingVaccines(), registerPushToken(), loadUserName(), loadUserProfile()]);
         setIsLoggedIn(true);
         setRegisterForm({ firstName: '', lastName: '', email: '', password: '', confirmPassword: '', phone: '', rut: '', sex: '', birthYear: '', commune: '' });
         setRegisterStep(1);
@@ -2184,11 +2192,19 @@ export default function App() {
   };
 
   const isFullScreenMap = screen === 'ScanTag';
-  const isFullScreen = isFullScreenMap || screen === 'NearbyMap' || screen === 'LostPetDetail' || screen === 'Login' || screen === 'Register' || screen === 'Home' || screen === 'PetList' || screen === 'PetDetail' || screen === 'Profile';
+  const isFullScreen = isFullScreenMap || screen === 'NearbyMap' || screen === 'Login' || screen === 'Register' || screen === 'Home' || screen === 'PetList' || screen === 'PetDetail' || screen === 'Profile';
 
   return (
     <>
-      {isFullScreen ? (
+      {isInitializing ? (
+        <View style={{ flex: 1, backgroundColor: C.primaryDark, alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ fontSize: 42, fontWeight: '900' }}>
+            <Text style={{ color: '#fff' }}>Chip</Text>
+            <Text style={{ color: C.dark }}>Dog</Text>
+            <Text> 🐾</Text>
+          </Text>
+        </View>
+      ) : isFullScreen ? (
         /* Login, Register, NearbyMap, ScanTag — sin SafeAreaView para que el contenido llegue al borde superior */
         <View style={{ flex: 1, backgroundColor: C.bg }}>
           {renderScreen()}
