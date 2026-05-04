@@ -138,7 +138,7 @@ export default function PetContactScreen({
         <Text style={styles.fieldLabel}>Nombre del veterinario / clínica</Text>
         <TextInput
           style={styles.input}
-          placeholder="Ej: Dr. Martínez — ClínicaVet Las Condes"
+          placeholder="Ej: Dr. García — VetSalud"
           placeholderTextColor={C.textMuted}
           value={petDraft.vet_name}
           onChangeText={(v) => setPetDraft((p) => ({ ...p, vet_name: v }))}

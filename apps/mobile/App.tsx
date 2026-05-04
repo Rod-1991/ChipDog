@@ -345,27 +345,6 @@ export default function App() {
     await fetchSightings(petId);
   };
 
-  const loadNearbyLostPets = async (requestPermission = false) => {
-    try {
-      let status: string;
-      if (requestPermission) {
-        ({ status } = await Location.requestForegroundPermissionsAsync());
-      } else {
-        ({ status } = await Location.getForegroundPermissionsAsync());
-      }
-      if (status !== 'granted') return;
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      setNearbyUserLoc({ lat: loc.coords.latitude, lng: loc.coords.longitude });
-      const { data } = await supabase.rpc('get_nearby_lost_pets', {
-        p_lat: loc.coords.latitude,
-        p_lng: loc.coords.longitude,
-        p_radius_km: 10,
-      });
-      setNearbyLostPets((data as NearbyLostPet[]) ?? []);
-    } catch {
-      // silent fail — nearby is optional
-    }
-  };
 
   const loadHomePetPhotos = async (petsToResolve: Pet[]) => {
     if (!petsToResolve.length) {
@@ -529,25 +508,6 @@ export default function App() {
       }, 300);
     } catch {
       Alert.alert('Ubicación no disponible', 'Toca el mapa para marcar dónde se perdió tu mascota.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const centerOnMyLocation = async () => {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') return;
-    setLoading(true);
-    try {
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const coords = { lat: loc.coords.latitude, lng: loc.coords.longitude };
-      setLostPin(coords);
-      mapRef.current?.animateToRegion({
-        latitude: coords.lat,
-        longitude: coords.lng,
-        latitudeDelta: 0.008,
-        longitudeDelta: 0.008,
-      }, 600);
     } finally {
       setLoading(false);
     }
@@ -1245,30 +1205,6 @@ export default function App() {
   };
 
   // (Se mantienen por si los usas en FoundResult más adelante)
-  const openWhatsApp = async (phone: string) => {
-    const digits = phone.replace(/[^\d+]/g, '');
-    if (!digits) return;
-    const url = `https://wa.me/${digits.replace('+', '')}`;
-    const can = await Linking.canOpenURL(url);
-    if (!can) {
-      Alert.alert('WhatsApp', 'No pude abrir WhatsApp en este dispositivo.');
-      return;
-    }
-    Linking.openURL(url);
-  };
-
-  const openTel = async (phone: string) => {
-    const digits = phone.replace(/[^\d+]/g, '');
-    if (!digits) return;
-    const url = `tel:${digits}`;
-    const can = await Linking.canOpenURL(url);
-    if (!can) {
-      Alert.alert('Llamar', 'No pude abrir el dialer.');
-      return;
-    }
-    Linking.openURL(url);
-  };
-
   const loadVetHistory = async (petId: number) => {
     const { data, error } = await supabase
       .from('pet_vet_records')
