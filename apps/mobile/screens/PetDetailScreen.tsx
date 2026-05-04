@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Alert, Image, ScrollView, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, KeyboardAvoidingView, Platform, ScrollView, Switch, Text, TouchableOpacity, View } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { C } from '../constants/colors';
 import { styles } from '../styles';
@@ -68,11 +68,11 @@ type Props = {
   addPhotoAttachmentToForm: () => void; addPdfAttachmentToForm: () => void;
   renderEditableAttachmentChip: (att: VetAttachment) => React.ReactElement;
   renderAttachmentChip: (att: VetAttachment) => React.ReactElement;
-  linkTagCode: string;
-  linkTagMode: 'choose' | 'nfc' | 'qr'; setLinkTagMode: (m: 'choose' | 'nfc' | 'qr') => void;
+  petTags: { id: number; code: string }[];
   nfcStatus: 'idle' | 'scanning' | 'success' | 'error'; setNfcStatus: (s: 'idle' | 'scanning' | 'success' | 'error') => void;
   nfcError: string; setNfcError: (v: string) => void;
-  writeNfcTag: () => void; saveLinkTagCode: (code: string) => Promise<boolean>;
+  readNfcTagForLink: () => void; unlinkTag: (tagId: number) => Promise<void>;
+  fetchPetTags: (petId: number) => Promise<void>;
   weightHistory: WeightEntry[];
   foodHistory: FoodEntry[];
   saveWeightEntry: (petId: number, weight_kg: number, measured_at: string, notes: string) => Promise<void>;
@@ -103,8 +103,8 @@ export default function PetDetailScreen({
   saveVetRecord, deleteVetRecord, resetVetForm,
   addPhotoAttachmentToForm, addPdfAttachmentToForm,
   renderEditableAttachmentChip, renderAttachmentChip,
-  linkTagCode, linkTagMode, setLinkTagMode, nfcStatus, setNfcStatus, nfcError, setNfcError,
-  writeNfcTag, saveLinkTagCode,
+  petTags, nfcStatus, setNfcStatus, nfcError, setNfcError,
+  readNfcTagForLink, unlinkTag, fetchPetTags,
   weightHistory, foodHistory, saveWeightEntry, deleteWeightEntry, saveFoodEntry, deleteFoodEntry,
   setScreen,
 }: Props) {
@@ -170,7 +170,7 @@ export default function PetDetailScreen({
     };
 
     return (
-      <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         {/* Header pantalla completa */}
         <View style={{
           backgroundColor: C.primaryDark,
@@ -190,13 +190,14 @@ export default function PetDetailScreen({
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 40 }}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
         >
           {activeTab === 'info' && (
             <PetInfoTab selectedPet={selectedPet} isEditing={isEditing} setIsEditing={setIsEditing}
               petDraft={petDraft} setPetDraft={setPetDraft}
               showBirthCalendar={showProfileBirthCalendar} setShowBirthCalendar={setShowProfileBirthCalendar}
               birthCalendarMonth={profileBirthCalendarMonth} setBirthCalendarMonth={setProfileBirthCalendarMonth}
-              loading={loading} savePetProfile={savePetProfile} />
+              loading={loading} savePetProfile={savePetProfile} petTags={petTags} />
           )}
           {activeTab === 'contacto' && (
             <PetContactTab selectedPet={selectedPet} isEditing={isEditing} setIsEditing={setIsEditing}
@@ -229,12 +230,12 @@ export default function PetDetailScreen({
               saveFoodEntry={saveFoodEntry} deleteFoodEntry={deleteFoodEntry} />
           )}
         </ScrollView>
-      </View>
+      </KeyboardAvoidingView>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: C.bg }}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
 
       {/* ── BLOQUE FIJO: foto + name card + tabs ── */}
       <View>
@@ -392,6 +393,7 @@ export default function PetDetailScreen({
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 90 }}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
       >
         {activeTab === 'info' && (
           <PetInfoTab
@@ -400,7 +402,7 @@ export default function PetDetailScreen({
             petDraft={petDraft} setPetDraft={setPetDraft}
             showBirthCalendar={showProfileBirthCalendar} setShowBirthCalendar={setShowProfileBirthCalendar}
             birthCalendarMonth={profileBirthCalendarMonth} setBirthCalendarMonth={setProfileBirthCalendarMonth}
-            loading={loading} savePetProfile={savePetProfile}
+            loading={loading} savePetProfile={savePetProfile} petTags={petTags}
           />
         )}
         {activeTab === 'contacto' && (
@@ -450,9 +452,13 @@ export default function PetDetailScreen({
               <>
                 <PetTagTab
                   selectedPet={selectedPet}
-                  linkTagCode={linkTagCode} linkTagMode={linkTagMode} setLinkTagMode={setLinkTagMode}
-                  nfcStatus={nfcStatus} setNfcStatus={setNfcStatus} nfcError={nfcError} setNfcError={setNfcError}
-                  loading={loading} writeNfcTag={writeNfcTag} saveLinkTagCode={saveLinkTagCode}
+                  petTags={petTags}
+                  nfcStatus={nfcStatus} setNfcStatus={setNfcStatus}
+                  nfcError={nfcError} setNfcError={setNfcError}
+                  loading={loading}
+                  readNfcTagForLink={readNfcTagForLink}
+                  unlinkTag={unlinkTag}
+                  fetchPetTags={fetchPetTags}
                 />
                 {/* Co-dueños solo en tab Tag */}
                 <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
@@ -523,6 +529,6 @@ export default function PetDetailScreen({
           </TouchableOpacity>
         ))}
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }

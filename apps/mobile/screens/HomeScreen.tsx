@@ -196,7 +196,7 @@ export default function HomeScreen({
             </TouchableOpacity>
           </View>
           <Text style={{ fontSize: 26, fontWeight: '900', color: C.white }}>
-            Hola, <Text style={{ color: C.accent }}>{displayName}</Text> 👋
+            Hola, <Text style={{ color: C.accent }}>{displayName}</Text>
           </Text>
           <Text style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', fontWeight: '700', marginTop: 3 }}>
             {pets.length > 0

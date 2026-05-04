@@ -5,7 +5,7 @@ import type { InfoRowProps } from '../types';
 const InfoRow = ({ label, value }: InfoRowProps) => (
   <View style={styles.row}>
     <Text style={styles.rowLabel}>{label}</Text>
-    <Text style={styles.rowValue}>{value?.trim?.() ? value : '—'}</Text>
+    <Text style={styles.rowValue}>{value != null && String(value).trim() ? String(value) : '—'}</Text>
   </View>
 );
 
