@@ -22,8 +22,8 @@ export default function FoundTagScreen() {
 
   const handleFoundLookup = async () => {
     if (!foundCode.trim()) return;
-    await lookupTagCode(foundCode.trim());
-    setScreen('FoundResult');
+    const found = await lookupTagCode(foundCode.trim());
+    if (found) setScreen('FoundResult');
   };
 
   const readNfcTagForFound = async () => {
@@ -33,8 +33,8 @@ export default function FoundTagScreen() {
       const id = tag?.id;
       if (!id) return;
       const uid = (id as number[]).map((b) => b.toString(16).padStart(2, '0')).join('').toUpperCase();
-      await lookupTagCode(uid);
-      setScreen('FoundResult');
+      const found = await lookupTagCode(uid);
+      if (found) setScreen('FoundResult');
     } catch { /* usuario canceló o error NFC */ } finally {
       try { await NfcManager.cancelTechnologyRequest(); } catch {}
     }

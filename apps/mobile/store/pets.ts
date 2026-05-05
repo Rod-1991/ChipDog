@@ -73,7 +73,7 @@ interface PetsStore {
   linkTagByUid: (uid: string) => Promise<boolean>;
   unlinkTag: (tagId: number) => Promise<void>;
 
-  lookupTagCode: (code: string) => Promise<void>;
+  lookupTagCode: (code: string) => Promise<boolean>;
 
   handleCreatePet: (form: {
     name: string; species: 'Perro' | 'Gato'; breed: string; sex: string;
@@ -302,17 +302,19 @@ export const usePetsStore = create<PetsStore>((set, get) => ({
   },
 
   lookupTagCode: async (code) => {
-    if (!code) { Alert.alert('Ingresa el código o número de chip'); return; }
+    if (!code) { Alert.alert('Ingresa el código o número de chip'); return false; }
     try {
       const { data: tagData, error: tagError } = await supabase.rpc('get_pet_public_by_tag', { p_code: code });
       if (tagError) throw tagError;
-      if (tagData?.length > 0) { set({ foundPet: tagData[0] }); return; }
+      if (tagData?.length > 0) { set({ foundPet: tagData[0] }); return true; }
       const { data: chipData, error: chipError } = await supabase.rpc('get_pet_public_by_chip', { p_chip: code });
       if (chipError) throw chipError;
-      if (chipData?.length > 0) { set({ foundPet: chipData[0] }); return; }
+      if (chipData?.length > 0) { set({ foundPet: chipData[0] }); return true; }
       Alert.alert('No encontrado', 'No hay ninguna mascota registrada con ese tag o número de chip.');
+      return false;
     } catch (err: any) {
       Alert.alert('Error', err?.message ?? 'Error al buscar la mascota.');
+      return false;
     }
   },
 
