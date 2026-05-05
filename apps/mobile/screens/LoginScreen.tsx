@@ -1,29 +1,39 @@
-import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import { useState } from 'react';
+import { Alert, Keyboard, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { C } from '../constants/colors';
-import type { Screen } from '../types';
+import { supabase } from '../lib/supabase';
+import { loginSchema } from '@chipdog/shared';
+import { useAppStore } from '../store/app';
 
-type LoginScreenProps = {
-  email: string;
-  setEmail: (v: string) => void;
-  password: string;
-  setPassword: (v: string) => void;
-  loading: boolean;
-  showPassword: boolean;
-  setShowPassword: (fn: (v: boolean) => boolean) => void;
-  handleLogin: () => void;
-  setScreen: (s: Screen) => void;
-};
+type Props = { onLoggedIn: () => void };
 
-export default function LoginScreen({
-  email, setEmail, password, setPassword, loading,
-  showPassword, setShowPassword, handleLogin, setScreen,
-}: LoginScreenProps) {
+export default function LoginScreen({ onLoggedIn }: Props) {
+  const setScreen = useAppStore((s) => s.setScreen);
+  const loading = useAppStore((s) => s.loading);
+  const setLoading = useAppStore((s) => s.setLoading);
+
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+
+  const handleLogin = async () => {
+    const parsed = loginSchema.safeParse({ email, password });
+    if (!parsed.success) {
+      Alert.alert('Validación', parsed.error.errors[0]?.message ?? 'Datos inválidos');
+      return;
+    }
+    setLoading(true);
+    const { error } = await supabase.auth.signInWithPassword(parsed.data as { email: string; password: string });
+    setLoading(false);
+    if (error) { Alert.alert('Login falló', error.message); return; }
+    onLoggedIn();
+  };
+
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
     <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1 }}>
 
-      {/* Header */}
       <View style={{
         backgroundColor: C.primaryDark,
         paddingTop: 60, paddingBottom: 52, paddingHorizontal: 28,
@@ -40,37 +50,21 @@ export default function LoginScreen({
         </Text>
       </View>
 
-      {/* Form */}
       <View style={{ paddingHorizontal: 22, paddingTop: 26 }}>
-
         <Text style={{ fontSize: 13, fontWeight: '800', color: C.dark, marginBottom: 6 }}>Email</Text>
         <TextInput
-          value={email}
-          onChangeText={setEmail}
-          style={{
-            height: 52, borderWidth: 1.5, borderColor: C.border, borderRadius: 16,
-            backgroundColor: C.white, paddingHorizontal: 18, fontSize: 15,
-            color: C.dark, marginBottom: 14,
-          }}
-          placeholder="tu@email.com"
-          placeholderTextColor="#B2DED9"
-          autoCapitalize="none"
-          keyboardType="email-address"
-          autoCorrect={false}
+          value={email} onChangeText={setEmail}
+          style={{ height: 52, borderWidth: 1.5, borderColor: C.border, borderRadius: 16, backgroundColor: C.white, paddingHorizontal: 18, fontSize: 15, color: C.dark, marginBottom: 14 }}
+          placeholder="tu@email.com" placeholderTextColor="#B2DED9"
+          autoCapitalize="none" keyboardType="email-address" autoCorrect={false}
         />
 
         <Text style={{ fontSize: 13, fontWeight: '800', color: C.dark, marginBottom: 6 }}>Contraseña</Text>
         <View style={{ position: 'relative', marginBottom: 14 }}>
           <TextInput
-            value={password}
-            onChangeText={setPassword}
-            style={{
-              height: 52, borderWidth: 1.5, borderColor: C.border, borderRadius: 16,
-              backgroundColor: C.white, paddingHorizontal: 18, paddingRight: 48,
-              fontSize: 15, color: C.dark,
-            }}
-            placeholder="••••••••"
-            placeholderTextColor="#B2DED9"
+            value={password} onChangeText={setPassword}
+            style={{ height: 52, borderWidth: 1.5, borderColor: C.border, borderRadius: 16, backgroundColor: C.white, paddingHorizontal: 18, paddingRight: 48, fontSize: 15, color: C.dark }}
+            placeholder="••••••••" placeholderTextColor="#B2DED9"
             secureTextEntry={!showPassword}
           />
           <TouchableOpacity
@@ -82,10 +76,7 @@ export default function LoginScreen({
         </View>
 
         <TouchableOpacity
-          style={{
-            height: 52, backgroundColor: C.primaryDark, borderRadius: 16,
-            alignItems: 'center', justifyContent: 'center', marginBottom: 12,
-          }}
+          style={{ height: 52, backgroundColor: C.primaryDark, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}
           onPress={handleLogin} disabled={loading} activeOpacity={0.85}
         >
           <Text style={{ color: C.white, fontSize: 16, fontWeight: '900' }}>
@@ -93,7 +84,6 @@ export default function LoginScreen({
           </Text>
         </TouchableOpacity>
 
-        {/* Divider */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 4, marginBottom: 12 }}>
           <View style={{ flex: 1, height: 1, backgroundColor: C.border }} />
           <Text style={{ fontSize: 12, fontWeight: '700', color: '#B2DED9' }}>¿No tienes cuenta?</Text>
@@ -101,11 +91,7 @@ export default function LoginScreen({
         </View>
 
         <TouchableOpacity
-          style={{
-            height: 52, backgroundColor: C.white, borderWidth: 1.5,
-            borderColor: C.primaryDark, borderRadius: 16,
-            alignItems: 'center', justifyContent: 'center', marginBottom: 16,
-          }}
+          style={{ height: 52, backgroundColor: C.white, borderWidth: 1.5, borderColor: C.primaryDark, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}
           onPress={() => setScreen('Register')} activeOpacity={0.85}
         >
           <Text style={{ color: C.primaryDark, fontSize: 16, fontWeight: '900' }}>Crear cuenta gratis</Text>
@@ -114,7 +100,6 @@ export default function LoginScreen({
         <TouchableOpacity style={{ alignItems: 'center', paddingVertical: 8 }} onPress={() => setScreen('FoundTag')} activeOpacity={0.85}>
           <Text style={{ color: C.primaryDark, fontWeight: '700', fontSize: 13 }}>🔍  Encontré una mascota</Text>
         </TouchableOpacity>
-
       </View>
     </ScrollView>
     </TouchableWithoutFeedback>

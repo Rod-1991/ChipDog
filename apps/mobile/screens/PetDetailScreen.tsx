@@ -3,13 +3,18 @@ import { Alert, Image, KeyboardAvoidingView, Platform, ScrollView, Switch, Text,
 import { supabase } from '../lib/supabase';
 import { C } from '../constants/colors';
 import { styles } from '../styles';
-import type { Pet, Screen, Vaccine, VetRecord, VetAttachment, WeightEntry, FoodEntry } from '../types';
+import type { Screen } from '../types';
 import type { PetDraft } from './tabs/PetInfoTab';
 import PetInfoTab from './tabs/PetInfoTab';
 import PetContactTab from './tabs/PetContactTab';
 import PetSaludTab from './tabs/PetSaludTab';
 import PetNutricionTab from './tabs/PetNutricionTab';
 import PetTagTab from './tabs/PetTagTab';
+import { useAppStore } from '../store/app';
+import { usePetsStore } from '../store/pets';
+import { useVaccinesStore } from '../store/vaccines';
+import { useVetStore } from '../store/vet';
+import { useUserStore } from '../store/user';
 
 type Tab = 'info' | 'contacto' | 'salud' | 'nutricion' | 'tag';
 
@@ -21,97 +26,28 @@ const TAB_LABELS: { key: Tab; label: string }[] = [
   { key: 'tag',       label: 'Tag' },
 ];
 
-type VaccineForm = {
-  vaccine_name: string; applied_date: string; expiry_date: string;
-  next_dose_date: string; veterinarian: string; clinic: string;
-  batch_number: string; notes: string;
-};
-type VetForm = {
-  date: string; doctor: string; clinic: string; reason: string;
-  diagnosis: string; treatment: string; description: string; attachments: VetAttachment[];
-};
-type VaccineStatusResult = { color: string; label: string };
-
-type Props = {
-  selectedPet: Pet | null;
-  petPhotoSignedUrl: string | null;
-  userId: string | null;
-  loading: boolean;
-  setLoading: (v: boolean) => void;
-  setSelectedPet: (pet: Pet | null) => void;
-  pickAndUploadPetPhoto: (petId: number) => void;
-  openLostMap: () => void;
-  updatePetLostStatus: (petId: number, isLost: boolean) => void;
-  updatePetContactPublic: (petId: number, value: boolean) => void;
-  fetchPets: () => Promise<void>;
-  petDraft: PetDraft;
-  setPetDraft: (fn: (p: PetDraft) => PetDraft) => void;
-  showProfileBirthCalendar: boolean;
-  setShowProfileBirthCalendar: (fn: (v: boolean) => boolean) => void;
-  profileBirthCalendarMonth: Date;
-  setProfileBirthCalendarMonth: (fn: (p: Date) => Date) => void;
-  savePetProfile: () => void;
-  vaccines: Vaccine[];
-  showVaccineForm: boolean; setShowVaccineForm: (v: boolean) => void;
-  editingVaccineId: number | null; setEditingVaccineId: (id: number | null) => void;
-  vaccineForm: VaccineForm; setVaccineForm: (fn: (p: VaccineForm) => VaccineForm) => void;
-  saveVaccine: () => void; deleteVaccine: (id: number) => void;
-  resetVaccineForm: () => void; startEditVaccine: (v: Vaccine) => void;
-  vaccineStatus: (v: Vaccine) => VaccineStatusResult;
-  vetView: 'list' | 'detail' | 'form'; setVetView: (v: 'list' | 'detail' | 'form') => void;
-  vetHistory: VetRecord[];
-  selectedVetRecord: VetRecord | null; setSelectedVetRecord: (r: VetRecord | null) => void;
-  vetForm: VetForm; setVetForm: (fn: (p: VetForm) => VetForm) => void;
-  symptomText: string; setSymptomText: (v: string) => void;
-  editingVetRecordId: string | null;
-  saveVetRecord: () => void; deleteVetRecord: () => void; resetVetForm: () => void;
-  addPhotoAttachmentToForm: () => void; addPdfAttachmentToForm: () => void;
-  renderEditableAttachmentChip: (att: VetAttachment) => React.ReactElement;
-  renderAttachmentChip: (att: VetAttachment) => React.ReactElement;
-  petTags: { id: number; code: string }[];
-  nfcStatus: 'idle' | 'scanning' | 'success' | 'error'; setNfcStatus: (s: 'idle' | 'scanning' | 'success' | 'error') => void;
-  nfcError: string; setNfcError: (v: string) => void;
-  readNfcTagForLink: () => void; unlinkTag: (tagId: number) => Promise<void>;
-  fetchPetTags: (petId: number) => Promise<void>;
-  weightHistory: WeightEntry[];
-  foodHistory: FoodEntry[];
-  saveWeightEntry: (petId: number, weight_kg: number, measured_at: string, notes: string) => Promise<void>;
-  deleteWeightEntry: (id: number, petId: number) => Promise<void>;
-  saveFoodEntry: (petId: number, food_brand: string, started_at: string, notes: string) => Promise<void>;
-  deleteFoodEntry: (id: number, petId: number) => Promise<void>;
-  setScreen: (s: Screen) => void;
-};
-
-function profilePct(pet: Pet, draft: PetDraft): number {
+function profilePct(pet: { photo_url?: string | null }, draft: PetDraft): number {
   const fields = [
     pet.photo_url, draft.sex, draft.birth_date_text, draft.weight_kg,
-    pet.breed, draft.color, draft.chip_number,
+    draft.color, draft.chip_number,
     draft.contact_primary_name, draft.owner_phone,
   ];
   return Math.round(fields.filter(Boolean).length / fields.length * 100);
 }
 
-export default function PetDetailScreen({
-  selectedPet, petPhotoSignedUrl, userId, loading, setLoading, setSelectedPet,
-  pickAndUploadPetPhoto, openLostMap, updatePetLostStatus, updatePetContactPublic, fetchPets,
-  petDraft, setPetDraft, showProfileBirthCalendar, setShowProfileBirthCalendar,
-  profileBirthCalendarMonth, setProfileBirthCalendarMonth, savePetProfile,
-  vaccines, showVaccineForm, setShowVaccineForm, editingVaccineId, setEditingVaccineId,
-  vaccineForm, setVaccineForm, saveVaccine, deleteVaccine, resetVaccineForm, startEditVaccine, vaccineStatus,
-  vetView, setVetView, vetHistory, selectedVetRecord, setSelectedVetRecord,
-  vetForm, setVetForm, symptomText, setSymptomText, editingVetRecordId,
-  saveVetRecord, deleteVetRecord, resetVetForm,
-  addPhotoAttachmentToForm, addPdfAttachmentToForm,
-  renderEditableAttachmentChip, renderAttachmentChip,
-  petTags, nfcStatus, setNfcStatus, nfcError, setNfcError,
-  readNfcTagForLink, unlinkTag, fetchPetTags,
-  weightHistory, foodHistory, saveWeightEntry, deleteWeightEntry, saveFoodEntry, deleteFoodEntry,
-  setScreen,
-}: Props) {
+export default function PetDetailScreen() {
+  const { loading, setLoading, setScreen } = useAppStore();
+  const { selectedPet, petPhotoSignedUrl, petDraft, petTags, pickAndUploadPetPhoto,
+          updatePetLostStatus, updatePetContactPublic, fetchPets, setSelectedPet } = usePetsStore();
+  const { showVaccineForm, resetVaccineForm } = useVaccinesStore();
+  const { vetView, editingVetRecordId, selectedVetRecord, startEditVetRecord, resetVetForm, resetVetView } = useVetStore();
+  const userId = useUserStore((s) => s.userId);
+
   const [activeTab, setActiveTab] = useState<Tab>('info');
   const [isEditing, setIsEditing] = useState(false);
+  const [showBirthCalendar, setShowBirthCalendar] = useState(false);
+  const [birthCalendarMonth, setBirthCalendarMonth] = useState(new Date());
 
-  // Títulos para el header de pantalla completa
   const fullScreenTitles: Record<Tab, string> = {
     info: 'Editar información',
     contacto: 'Editar contacto',
@@ -120,7 +56,6 @@ export default function PetDetailScreen({
     tag: 'Tag',
   };
 
-  // ¿Estamos en modo formulario/edición a pantalla completa?
   const isFullForm =
     isEditing ||
     showVaccineForm ||
@@ -142,9 +77,9 @@ export default function PetDetailScreen({
   const pct = profilePct(selectedPet, petDraft);
   const pctColor = pct >= 80 ? C.success : pct >= 40 ? C.warning : C.danger;
 
-  // Vacuna próxima en 30 días
   const today = new Date();
   const in30 = new Date(); in30.setDate(today.getDate() + 30);
+  const { vaccines } = useVaccinesStore.getState();
   const upcomingVaccine = vaccines.find(v => {
     const d = v.next_dose_date ?? v.expiry_date;
     if (!d) return false;
@@ -152,10 +87,9 @@ export default function PetDetailScreen({
     return date >= today && date <= in30;
   });
 
-  // ── MODO PANTALLA COMPLETA (edición / formulario) ──
   if (isFullForm) {
     const title = showVaccineForm
-      ? (editingVaccineId ? 'Editar vacuna' : 'Nueva vacuna')
+      ? (editingVetRecordId ? 'Editar vacuna' : 'Nueva vacuna')
       : vetView === 'form'
         ? (editingVetRecordId ? 'Editar visita' : 'Nueva visita')
         : vetView === 'detail'
@@ -163,15 +97,14 @@ export default function PetDetailScreen({
           : fullScreenTitles[activeTab];
 
     const handleBack = () => {
-      if (showVaccineForm) { resetVaccineForm(); setShowVaccineForm(false); return; }
-      if (vetView === 'form') { resetVetForm(); setVetView('list'); return; }
-      if (vetView === 'detail') { setSelectedVetRecord(null); setVetView('list'); return; }
+      if (showVaccineForm) { resetVaccineForm(); return; }
+      if (vetView === 'form') { resetVetForm(); resetVetView(); return; }
+      if (vetView === 'detail') { resetVetView(); return; }
       setIsEditing(false);
     };
 
     return (
       <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        {/* Header pantalla completa */}
         <View style={{
           backgroundColor: C.primaryDark,
           paddingTop: 56, paddingBottom: 16, paddingHorizontal: 20,
@@ -193,41 +126,18 @@ export default function PetDetailScreen({
           keyboardDismissMode="interactive"
         >
           {activeTab === 'info' && (
-            <PetInfoTab selectedPet={selectedPet} isEditing={isEditing} setIsEditing={setIsEditing}
-              petDraft={petDraft} setPetDraft={setPetDraft}
-              showBirthCalendar={showProfileBirthCalendar} setShowBirthCalendar={setShowProfileBirthCalendar}
-              birthCalendarMonth={profileBirthCalendarMonth} setBirthCalendarMonth={setProfileBirthCalendarMonth}
-              loading={loading} savePetProfile={savePetProfile} petTags={petTags} />
+            <PetInfoTab
+              isEditing={isEditing} setIsEditing={setIsEditing}
+              showBirthCalendar={showBirthCalendar} setShowBirthCalendar={setShowBirthCalendar}
+              birthCalendarMonth={birthCalendarMonth} setBirthCalendarMonth={setBirthCalendarMonth}
+            />
           )}
           {activeTab === 'contacto' && (
-            <PetContactTab selectedPet={selectedPet} isEditing={isEditing} setIsEditing={setIsEditing}
-              petDraft={petDraft} setPetDraft={setPetDraft}
-              loading={loading} savePetProfile={savePetProfile} />
+            <PetContactTab isEditing={isEditing} setIsEditing={setIsEditing} />
           )}
-          {activeTab === 'salud' && (
-            <PetSaludTab selectedPet={selectedPet}
-              vaccines={vaccines} showVaccineForm={showVaccineForm} setShowVaccineForm={setShowVaccineForm}
-              editingVaccineId={editingVaccineId} setEditingVaccineId={setEditingVaccineId}
-              vaccineForm={vaccineForm} setVaccineForm={setVaccineForm}
-              saveVaccine={saveVaccine} deleteVaccine={deleteVaccine}
-              resetVaccineForm={resetVaccineForm} startEditVaccine={startEditVaccine} vaccineStatus={vaccineStatus}
-              vetView={vetView} setVetView={setVetView} vetHistory={vetHistory}
-              selectedVetRecord={selectedVetRecord} setSelectedVetRecord={setSelectedVetRecord}
-              vetForm={vetForm} setVetForm={setVetForm}
-              symptomText={symptomText} setSymptomText={setSymptomText} editingVetRecordId={editingVetRecordId}
-              saveVetRecord={saveVetRecord} deleteVetRecord={deleteVetRecord} resetVetForm={resetVetForm}
-              addPhotoAttachmentToForm={addPhotoAttachmentToForm} addPdfAttachmentToForm={addPdfAttachmentToForm}
-              renderEditableAttachmentChip={renderEditableAttachmentChip} renderAttachmentChip={renderAttachmentChip}
-              loading={loading} />
-          )}
+          {activeTab === 'salud' && <PetSaludTab />}
           {activeTab === 'nutricion' && (
-            <PetNutricionTab isEditing={isEditing} setIsEditing={setIsEditing}
-              petDraft={petDraft} setPetDraft={setPetDraft}
-              loading={loading} savePetProfile={savePetProfile}
-              selectedPet={selectedPet}
-              weightHistory={weightHistory} foodHistory={foodHistory}
-              saveWeightEntry={saveWeightEntry} deleteWeightEntry={deleteWeightEntry}
-              saveFoodEntry={saveFoodEntry} deleteFoodEntry={deleteFoodEntry} />
+            <PetNutricionTab isEditing={isEditing} setIsEditing={setIsEditing} />
           )}
         </ScrollView>
       </KeyboardAvoidingView>
@@ -237,9 +147,7 @@ export default function PetDetailScreen({
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
 
-      {/* ── BLOQUE FIJO: foto + name card + tabs ── */}
       <View>
-        {/* Foto cover full-width */}
         <TouchableOpacity
           onPress={() => pickAndUploadPetPhoto(selectedPet.id)}
           disabled={loading}
@@ -255,7 +163,6 @@ export default function PetDetailScreen({
               </Text>
             </View>
           )}
-          {/* Overlay botón cámara */}
           <View style={{
             position: 'absolute', bottom: 12, right: 14,
             backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 20,
@@ -265,11 +172,9 @@ export default function PetDetailScreen({
             <Text style={{ fontSize: 14 }}>📷</Text>
             <Text style={{ color: C.white, fontSize: 11, fontWeight: '800' }}>Cambiar foto</Text>
           </View>
-          {/* Padding top para status bar */}
           <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 56, backgroundColor: 'rgba(0,0,0,0.25)' }} />
         </TouchableOpacity>
 
-        {/* Name card */}
         <View style={{ paddingHorizontal: 14, marginTop: -20 }}>
           <View style={{
             backgroundColor: C.white, borderRadius: 22,
@@ -284,14 +189,12 @@ export default function PetDetailScreen({
                   {petDraft.sex ? ` · ${petDraft.sex}` : ''}
                 </Text>
               </View>
-              {/* % perfil */}
               <View style={{ alignItems: 'center', gap: 2 }}>
                 <Text style={{ fontSize: 20, fontWeight: '900', color: pctColor }}>{pct}%</Text>
                 <Text style={{ fontSize: 9, fontWeight: '800', color: C.textMuted }}>PERFIL</Text>
               </View>
             </View>
 
-            {/* Tags */}
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 10 }}>
               {petDraft.birth_year ? (
                 <View style={{ backgroundColor: C.primaryLight, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 4 }}>
@@ -317,7 +220,6 @@ export default function PetDetailScreen({
           </View>
         </View>
 
-        {/* Alertas y switch perdido */}
         <View style={{ paddingHorizontal: 16, paddingTop: 10, gap: 8 }}>
           {upcomingVaccine && (
             <View style={{ backgroundColor: '#FFF8E1', borderRadius: 14, padding: 11, paddingHorizontal: 14,
@@ -335,7 +237,7 @@ export default function PetDetailScreen({
                 <Text style={styles.switchLabel}>🚨  Modo perdido</Text>
                 <Switch
                   value={selectedPet.is_lost}
-                  onValueChange={(v) => v ? openLostMap() : updatePetLostStatus(selectedPet.id, false)}
+                  onValueChange={(v) => v ? setScreen('LostPetMap') : updatePetLostStatus(selectedPet.id, false)}
                   disabled={loading}
                   trackColor={{ false: C.border, true: C.danger }}
                   thumbColor={C.white}
@@ -343,7 +245,7 @@ export default function PetDetailScreen({
               </View>
               {selectedPet.is_lost && (
                 <>
-                  <TouchableOpacity onPress={openLostMap} style={{ marginTop: 8 }}>
+                  <TouchableOpacity onPress={() => setScreen('LostPetMap')} style={{ marginTop: 8 }}>
                     <Text style={{ color: C.primary, fontWeight: '700', fontSize: 13 }}>📍 Editar ubicación y radio</Text>
                   </TouchableOpacity>
                   <View style={[styles.switchRow, { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.border }]}>
@@ -365,7 +267,6 @@ export default function PetDetailScreen({
           )}
         </View>
 
-        {/* Tabs fijos */}
         <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 }}>
           <View style={{ flexDirection: 'row', backgroundColor: C.white, borderRadius: 14,
             padding: 4, borderWidth: 1, borderColor: C.border }}>
@@ -388,7 +289,6 @@ export default function PetDetailScreen({
         </View>
       </View>
 
-      {/* ── CONTENIDO DEL TAB (scrolleable) ── */}
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 90 }}
@@ -397,70 +297,23 @@ export default function PetDetailScreen({
       >
         {activeTab === 'info' && (
           <PetInfoTab
-            selectedPet={selectedPet}
             isEditing={isEditing} setIsEditing={setIsEditing}
-            petDraft={petDraft} setPetDraft={setPetDraft}
-            showBirthCalendar={showProfileBirthCalendar} setShowBirthCalendar={setShowProfileBirthCalendar}
-            birthCalendarMonth={profileBirthCalendarMonth} setBirthCalendarMonth={setProfileBirthCalendarMonth}
-            loading={loading} savePetProfile={savePetProfile} petTags={petTags}
+            showBirthCalendar={showBirthCalendar} setShowBirthCalendar={setShowBirthCalendar}
+            birthCalendarMonth={birthCalendarMonth} setBirthCalendarMonth={setBirthCalendarMonth}
           />
         )}
         {activeTab === 'contacto' && (
-          <PetContactTab
-            selectedPet={selectedPet}
-            isEditing={isEditing} setIsEditing={setIsEditing}
-            petDraft={petDraft} setPetDraft={setPetDraft}
-            loading={loading} savePetProfile={savePetProfile}
-          />
+          <PetContactTab isEditing={isEditing} setIsEditing={setIsEditing} />
         )}
-        {activeTab === 'salud' && (
-          <PetSaludTab
-            selectedPet={selectedPet}
-            vaccines={vaccines}
-            showVaccineForm={showVaccineForm} setShowVaccineForm={setShowVaccineForm}
-            editingVaccineId={editingVaccineId} setEditingVaccineId={setEditingVaccineId}
-            vaccineForm={vaccineForm} setVaccineForm={setVaccineForm}
-            saveVaccine={saveVaccine} deleteVaccine={deleteVaccine}
-            resetVaccineForm={resetVaccineForm} startEditVaccine={startEditVaccine}
-            vaccineStatus={vaccineStatus}
-            vetView={vetView} setVetView={setVetView}
-            vetHistory={vetHistory}
-            selectedVetRecord={selectedVetRecord} setSelectedVetRecord={setSelectedVetRecord}
-            vetForm={vetForm} setVetForm={setVetForm}
-            symptomText={symptomText} setSymptomText={setSymptomText}
-            editingVetRecordId={editingVetRecordId}
-            saveVetRecord={saveVetRecord} deleteVetRecord={deleteVetRecord} resetVetForm={resetVetForm}
-            addPhotoAttachmentToForm={addPhotoAttachmentToForm} addPdfAttachmentToForm={addPdfAttachmentToForm}
-            renderEditableAttachmentChip={renderEditableAttachmentChip} renderAttachmentChip={renderAttachmentChip}
-            loading={loading}
-          />
-        )}
+        {activeTab === 'salud' && <PetSaludTab />}
         {activeTab === 'nutricion' && (
-          <PetNutricionTab
-            isEditing={isEditing} setIsEditing={setIsEditing}
-            petDraft={petDraft} setPetDraft={setPetDraft}
-            loading={loading} savePetProfile={savePetProfile}
-            selectedPet={selectedPet}
-            weightHistory={weightHistory} foodHistory={foodHistory}
-            saveWeightEntry={saveWeightEntry} deleteWeightEntry={deleteWeightEntry}
-            saveFoodEntry={saveFoodEntry} deleteFoodEntry={deleteFoodEntry}
-          />
+          <PetNutricionTab isEditing={isEditing} setIsEditing={setIsEditing} />
         )}
         {activeTab === 'tag' && (
           <>
             {isOwner ? (
               <>
-                <PetTagTab
-                  selectedPet={selectedPet}
-                  petTags={petTags}
-                  nfcStatus={nfcStatus} setNfcStatus={setNfcStatus}
-                  nfcError={nfcError} setNfcError={setNfcError}
-                  loading={loading}
-                  readNfcTagForLink={readNfcTagForLink}
-                  unlinkTag={unlinkTag}
-                  fetchPetTags={fetchPetTags}
-                />
-                {/* Co-dueños solo en tab Tag */}
+                <PetTagTab />
                 <View style={{ paddingHorizontal: 16, marginTop: 8 }}>
                   <TouchableOpacity
                     style={{ backgroundColor: C.dark, borderRadius: 16, paddingVertical: 14, alignItems: 'center' }}
@@ -480,7 +333,6 @@ export default function PetDetailScreen({
           </>
         )}
 
-        {/* Eliminar mascota */}
         {selectedPet.owner_id === userId && (
           <TouchableOpacity
             style={{ alignItems: 'center', paddingVertical: 20, marginTop: 4 }}
@@ -509,7 +361,6 @@ export default function PetDetailScreen({
         )}
       </ScrollView>
 
-      {/* Navbar fija */}
       <View style={{
         position: 'absolute', bottom: 0, left: 0, right: 0,
         backgroundColor: C.white, borderTopWidth: 1, borderTopColor: C.border,

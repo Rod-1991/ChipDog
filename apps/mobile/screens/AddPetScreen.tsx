@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { Alert, ScrollView, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { styles } from '../styles';
 import { C } from '../constants/colors';
 import { SPECIES_OPTIONS, DOG_BREEDS, CAT_BREEDS } from '../constants/breeds';
 import { buildCalendarDays, formatBirthDate } from '../utils/helpers';
-import type { Screen } from '../types';
+import { useAppStore } from '../store/app';
+import { usePetsStore } from '../store/pets';
 
 type PetForm = {
   name: string;
@@ -16,48 +18,44 @@ type PetForm = {
   chip_number: string;
 };
 
-type AddPetScreenProps = {
-  petForm: PetForm;
-  setPetForm: (fn: (p: PetForm) => PetForm) => void;
-  petFormStep: 1 | 2;
-  setPetFormStep: (s: 1 | 2) => void;
-  petBirthDate: Date | null;
-  setPetBirthDate: (d: Date | null) => void;
-  birthDateText: string;
-  setBirthDateText: (v: string) => void;
-  calendarMonthDate: Date;
-  setCalendarMonthDate: (fn: (c: Date) => Date) => void;
-  showBirthCalendar: boolean;
-  setShowBirthCalendar: (fn: (v: boolean) => boolean) => void;
-  showSpeciesDropdown: boolean;
-  setShowSpeciesDropdown: (fn: (v: boolean) => boolean) => void;
-  showBreedDropdown: boolean;
-  setShowBreedDropdown: (v: boolean) => void;
-  showSexPetDropdown: boolean;
-  setShowSexPetDropdown: (fn: (v: boolean) => boolean) => void;
-  breedSearch: string;
-  setBreedSearch: (v: string) => void;
-  loading: boolean;
-  handleCreatePet: () => void;
-  setScreen: (s: Screen) => void;
+const EMPTY_FORM: PetForm = {
+  name: '', species: 'Perro', breed: '', sex: '', description: '', weight_kg: '', sterilized: false, chip_number: '',
 };
 
 const SEX_PET_OPTIONS = ['Macho', 'Hembra'];
 
-export default function AddPetScreen({
-  petForm, setPetForm, petFormStep, setPetFormStep,
-  petBirthDate, setPetBirthDate, birthDateText, setBirthDateText,
-  calendarMonthDate, setCalendarMonthDate, showBirthCalendar, setShowBirthCalendar,
-  showSpeciesDropdown, setShowSpeciesDropdown, showBreedDropdown, setShowBreedDropdown,
-  showSexPetDropdown, setShowSexPetDropdown, breedSearch, setBreedSearch,
-  loading, handleCreatePet, setScreen,
-}: AddPetScreenProps) {
+export default function AddPetScreen() {
+  const { loading, setScreen } = useAppStore();
+  const { handleCreatePet } = usePetsStore();
+
+  const [petForm, setPetForm] = useState<PetForm>(EMPTY_FORM);
+  const [petFormStep, setPetFormStep] = useState<1 | 2>(1);
+  const [petBirthDate, setPetBirthDate] = useState<Date | null>(null);
+  const [birthDateText, setBirthDateText] = useState('');
+  const [calendarMonthDate, setCalendarMonthDate] = useState(new Date());
+  const [showBirthCalendar, setShowBirthCalendar] = useState(false);
+  const [showSpeciesDropdown, setShowSpeciesDropdown] = useState(false);
+  const [showBreedDropdown, setShowBreedDropdown] = useState(false);
+  const [showSexPetDropdown, setShowSexPetDropdown] = useState(false);
+  const [breedSearch, setBreedSearch] = useState('');
+
   const breedList = petForm.species === 'Perro' ? DOG_BREEDS : CAT_BREEDS;
   const filteredBreeds = breedSearch.trim()
     ? breedList.filter(b => b.toLowerCase().includes(breedSearch.toLowerCase()))
     : breedList.slice(0, 8);
   const monthDays = buildCalendarDays(calendarMonthDate);
   const monthTitle = calendarMonthDate.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' });
+
+  const onCreatePet = async () => {
+    const ok = await handleCreatePet(petForm, petBirthDate);
+    if (ok) {
+      setPetForm(EMPTY_FORM);
+      setPetFormStep(1);
+      setBirthDateText('');
+      setPetBirthDate(null);
+      setScreen('PetList');
+    }
+  };
 
   return (
     <View style={styles.form}>
@@ -90,7 +88,7 @@ export default function AddPetScreen({
               <View style={styles.selectMenu}>
                 {SPECIES_OPTIONS.map(opt => (
                   <TouchableOpacity key={opt} style={[styles.selectOption, petForm.species === opt && styles.selectOptionActive]}
-                    onPress={() => { setPetForm(p => ({ ...p, species: opt, breed: '' })); setBreedSearch(''); setShowSpeciesDropdown(() => false); }}>
+                    onPress={() => { setPetForm(p => ({ ...p, species: opt, breed: '' })); setBreedSearch(''); setShowSpeciesDropdown(false); }}>
                     <Text style={[styles.selectOptionText, petForm.species === opt && styles.selectOptionTextActive]}>
                       {opt === 'Perro' ? '🐶 Perro' : '🐱 Gato'}
                     </Text>
@@ -110,7 +108,7 @@ export default function AddPetScreen({
               <View style={styles.selectMenu}>
                 {SEX_PET_OPTIONS.map(opt => (
                   <TouchableOpacity key={opt} style={[styles.selectOption, petForm.sex === opt && styles.selectOptionActive]}
-                    onPress={() => { setPetForm(p => ({ ...p, sex: opt })); setShowSexPetDropdown(() => false); }}>
+                    onPress={() => { setPetForm(p => ({ ...p, sex: opt })); setShowSexPetDropdown(false); }}>
                     <Text style={[styles.selectOptionText, petForm.sex === opt && styles.selectOptionTextActive]}>{opt}</Text>
                   </TouchableOpacity>
                 ))}
@@ -137,7 +135,6 @@ export default function AddPetScreen({
             </View>
             {showBreedDropdown && (
               <View style={[styles.selectMenu, { maxHeight: 220 }]}>
-                {/* Mestizo siempre primero y destacado */}
                 {!breedSearch && (
                   <TouchableOpacity style={[styles.selectOption, { backgroundColor: C.primaryLight }]}
                     onPress={() => { setPetForm(p => ({ ...p, breed: 'Mestizo' })); setBreedSearch(''); setShowBreedDropdown(false); }}>
@@ -165,21 +162,18 @@ export default function AddPetScreen({
                 placeholderTextColor={C.textMuted}
                 value={birthDateText}
                 onChangeText={(v) => {
-                  // Solo dígitos y barras
                   let clean = v.replace(/[^\d]/g, '');
-                  // Auto-formato dd/mm/aaaa
                   if (clean.length > 2) clean = clean.slice(0, 2) + '/' + clean.slice(2);
                   if (clean.length > 5) clean = clean.slice(0, 5) + '/' + clean.slice(5);
                   if (clean.length > 10) clean = clean.slice(0, 10);
                   setBirthDateText(clean);
-                  // Parsear cuando esté completo
                   const match = clean.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
                   if (match) {
                     const d = parseInt(match[1]), m = parseInt(match[2]), y = parseInt(match[3]);
                     const date = new Date(y, m - 1, d);
                     if (date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d) {
                       setPetBirthDate(date);
-                      setCalendarMonthDate(() => date);
+                      setCalendarMonthDate(date);
                     } else {
                       setPetBirthDate(null);
                     }
@@ -217,7 +211,7 @@ export default function AddPetScreen({
                     return (
                       <TouchableOpacity key={`${day ?? 'e'}-${idx}`} disabled={day == null}
                         style={[styles.calendarDayBtn, day == null && styles.calendarDayBtnDisabled, isSelected && styles.calendarDayBtnSelected]}
-                        onPress={() => { if (!day) return; const d = new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth(), day); setPetBirthDate(d); setBirthDateText(formatBirthDate(d)); setShowBirthCalendar(() => false); }}>
+                        onPress={() => { if (!day) return; const d = new Date(calendarMonthDate.getFullYear(), calendarMonthDate.getMonth(), day); setPetBirthDate(d); setBirthDateText(formatBirthDate(d)); setShowBirthCalendar(false); }}>
                         <Text style={[styles.calendarDayText, isSelected && styles.calendarDayTextSelected]}>{day ?? ''}</Text>
                       </TouchableOpacity>
                     );
@@ -291,7 +285,7 @@ export default function AddPetScreen({
             </Text>
           </View>
 
-          <TouchableOpacity style={styles.btnPrimary} onPress={handleCreatePet} disabled={loading} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.btnPrimary} onPress={onCreatePet} disabled={loading} activeOpacity={0.85}>
             <Text style={styles.btnPrimaryText}>{loading ? 'Guardando...' : '🐾 Agregar mascota'}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={{ alignItems: 'center', paddingVertical: 8 }} onPress={() => setPetFormStep(1)} activeOpacity={0.85}>

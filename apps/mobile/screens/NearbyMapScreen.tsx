@@ -1,18 +1,17 @@
 import { Text, TouchableOpacity, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import { C } from '../constants/colors';
-import type { LostPetPin, Screen } from '../types';
+import { useAppStore } from '../store/app';
+import { useLostPetsStore } from '../store/lostPets';
 
 type NearbyMapScreenProps = {
-  allLostPets: LostPetPin[];
   nearbyMapRef: React.RefObject<MapView | null>;
-  setSelectedLostPet: (pet: LostPetPin) => void;
-  setScreen: (s: Screen) => void;
 };
 
-export default function NearbyMapScreen({
-  allLostPets, nearbyMapRef, setSelectedLostPet, setScreen,
-}: NearbyMapScreenProps) {
+export default function NearbyMapScreen({ nearbyMapRef }: NearbyMapScreenProps) {
+  const setScreen = useAppStore((s) => s.setScreen);
+  const { allLostPets, setSelectedLostPet } = useLostPetsStore();
+
   const initialRegion = {
     latitude: -33.4489, longitude: -70.6693,
     latitudeDelta: 0.12, longitudeDelta: 0.12,
@@ -67,7 +66,6 @@ export default function NearbyMapScreen({
               coordinate={{ latitude: pet.lost_lat, longitude: pet.lost_lng }}
               onPress={() => { setSelectedLostPet(pet); setScreen('LostPetDetail'); }}
             >
-              {/* Pin custom con emoji */}
               <View style={{ alignItems: 'center' }}>
                 <View style={{
                   width: 42, height: 42, borderRadius: 21,
@@ -80,7 +78,6 @@ export default function NearbyMapScreen({
                 }}>
                   <Text style={{ fontSize: 20 }}>{petEmoji(pet.species)}</Text>
                 </View>
-                {/* Sombra del pin */}
                 <View style={{
                   width: 12, height: 4, borderRadius: 6,
                   backgroundColor: 'rgba(0,0,0,0.15)', marginTop: 2,

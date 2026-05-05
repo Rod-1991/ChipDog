@@ -1,25 +1,18 @@
+import { useState } from 'react';
 import { Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { styles } from '../styles';
 import { C } from '../constants/colors';
 import { initialsFromName } from '../utils/helpers';
-import type { LostPetPin, Screen } from '../types';
+import { useAppStore } from '../store/app';
+import { useLostPetsStore } from '../store/lostPets';
 
-type LostPetListScreenProps = {
-  allLostPets: LostPetPin[];
-  lostListSpecies: 'Todos' | 'Perro' | 'Gato';
-  setLostListSpecies: (s: 'Todos' | 'Perro' | 'Gato') => void;
-  lostListCommune: string;
-  setLostListCommune: (c: string) => void;
-  lostPetSignedUrls: Record<number, string | null>;
-  setSelectedLostPet: (pet: LostPetPin) => void;
-  setScreen: (s: Screen) => void;
-};
+export default function LostPetListScreen() {
+  const setScreen = useAppStore((s) => s.setScreen);
+  const { allLostPets, lostPetSignedUrls, setSelectedLostPet } = useLostPetsStore();
 
-export default function LostPetListScreen({
-  allLostPets, lostListSpecies, setLostListSpecies,
-  lostListCommune, setLostListCommune,
-  lostPetSignedUrls, setSelectedLostPet, setScreen,
-}: LostPetListScreenProps) {
+  const [lostListSpecies, setLostListSpecies] = useState<'Todos' | 'Perro' | 'Gato'>('Todos');
+  const [lostListCommune, setLostListCommune] = useState('Todas');
+
   const communes = ['Todas', ...Array.from(new Set(allLostPets.map(p => p.lost_commune).filter(Boolean) as string[])).sort()];
   const speciesOptions: Array<'Todos' | 'Perro' | 'Gato'> = ['Todos', 'Perro', 'Gato'];
 

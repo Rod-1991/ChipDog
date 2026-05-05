@@ -1,18 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Image, KeyboardAvoidingView, Linking, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { C } from '../constants/colors';
 import { styles } from '../styles';
-import type { LostPetPin, PetSighting, Screen } from '../types';
-
-type Props = {
-  selectedLostPet: LostPetPin;
-  lostPetPhotoUrl: string | null;
-  sightings: PetSighting[];
-  saveSighting: (petId: number, reporterName: string, comment: string) => Promise<boolean>;
-  deleteSighting: (id: number, petId: number) => Promise<void>;
-  userId: string | null;
-  setScreen: (s: Screen) => void;
-};
+import { useAppStore } from '../store/app';
+import { useLostPetsStore } from '../store/lostPets';
+import { useNutritionStore } from '../store/nutrition';
+import { useUserStore } from '../store/user';
 
 function fmtDate(iso: string) {
   const d = new Date(iso);
@@ -27,15 +20,25 @@ function fmtDate(iso: string) {
   return d.toLocaleDateString('es-CL', { day: 'numeric', month: 'short' });
 }
 
-export default function LostPetDetailScreen({
-  selectedLostPet, lostPetPhotoUrl, sightings, saveSighting, deleteSighting, userId, setScreen,
-}: Props) {
+export default function LostPetDetailScreen() {
+  const setScreen = useAppStore((s) => s.setScreen);
+  const { selectedLostPet, lostPetSignedUrls } = useLostPetsStore();
+  const { sightings, fetchSightings, saveSighting, deleteSighting } = useNutritionStore();
+  const userId = useUserStore((s) => s.userId);
+
   const pet = selectedLostPet;
+  const lostPetPhotoUrl = pet ? (lostPetSignedUrls[pet.id] ?? null) : null;
 
   const [showForm, setShowForm] = useState(false);
   const [reporterName, setReporterName] = useState('');
   const [comment, setComment] = useState('');
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (pet) fetchSightings(pet.id);
+  }, [pet?.id]);
+
+  if (!pet) return null;
 
   const handleSave = async () => {
     if (!comment.trim()) { Alert.alert('Escribe un comentario'); return; }
@@ -55,7 +58,6 @@ export default function LostPetDetailScreen({
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}
         keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive">
 
-        {/* Foto / Hero con header encima */}
         <View style={{ height: 260 }}>
           {lostPetPhotoUrl ? (
             <Image source={{ uri: lostPetPhotoUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
@@ -64,7 +66,6 @@ export default function LostPetDetailScreen({
               <Text style={{ fontSize: 90 }}>{pet.species === 'cat' ? '🐈' : '🐕'}</Text>
             </View>
           )}
-          {/* Header teal encima de la foto */}
           <View style={{ position: 'absolute', top: 0, left: 0, right: 0,
             paddingTop: 56, paddingBottom: 12, paddingHorizontal: 16,
             backgroundColor: 'rgba(7,137,122,0.85)',
@@ -82,7 +83,6 @@ export default function LostPetDetailScreen({
         </View>
 
         <View style={{ paddingHorizontal: 16, marginTop: -20 }}>
-          {/* Name card */}
           <View style={{ backgroundColor: C.white, borderRadius: 22, padding: 16,
             borderWidth: 1, borderColor: C.border, marginBottom: 12 }}>
             <Text style={{ fontSize: 24, fontWeight: '900', color: C.dark }}>{pet.name}</Text>
@@ -103,7 +103,6 @@ export default function LostPetDetailScreen({
             </View>
           </View>
 
-          {/* Notas públicas */}
           {pet.public_notes && (
             <View style={{ backgroundColor: '#FFF8E1', borderRadius: 16, padding: 14,
               borderWidth: 1, borderColor: '#FFECB3', marginBottom: 12 }}>
@@ -113,31 +112,25 @@ export default function LostPetDetailScreen({
             </View>
           )}
 
-          {/* Contacto — solo si el dueño lo activó */}
           {pet.contact_public && (pet.owner_phone || pet.owner_whatsapp) && (
             <View style={{ gap: 8, marginBottom: 12 }}>
               {pet.owner_phone && (
                 <TouchableOpacity
-                  style={{ backgroundColor: C.primaryDark, borderRadius: 16,
-                    paddingVertical: 14, alignItems: 'center' }}
-                  onPress={() => Linking.openURL(`tel:${pet.owner_phone}`)}
-                  activeOpacity={0.85}>
+                  style={{ backgroundColor: C.primaryDark, borderRadius: 16, paddingVertical: 14, alignItems: 'center' }}
+                  onPress={() => Linking.openURL(`tel:${pet.owner_phone}`)} activeOpacity={0.85}>
                   <Text style={{ color: '#fff', fontWeight: '900', fontSize: 15 }}>📞  Llamar al dueño</Text>
                 </TouchableOpacity>
               )}
               {pet.owner_whatsapp && (
                 <TouchableOpacity
-                  style={{ backgroundColor: '#25D366', borderRadius: 16,
-                    paddingVertical: 14, alignItems: 'center' }}
-                  onPress={() => Linking.openURL(`whatsapp://send?phone=${pet.owner_whatsapp}`)}
-                  activeOpacity={0.85}>
+                  style={{ backgroundColor: '#25D366', borderRadius: 16, paddingVertical: 14, alignItems: 'center' }}
+                  onPress={() => Linking.openURL(`whatsapp://send?phone=${pet.owner_whatsapp}`)} activeOpacity={0.85}>
                   <Text style={{ color: '#fff', fontWeight: '900', fontSize: 15 }}>💬  WhatsApp</Text>
                 </TouchableOpacity>
               )}
             </View>
           )}
 
-          {/* ── AVISTAMIENTOS ── */}
           <View style={{ backgroundColor: C.white, borderRadius: 22,
             borderWidth: 1, borderColor: C.border, marginBottom: 12, overflow: 'hidden' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -156,7 +149,6 @@ export default function LostPetDetailScreen({
               )}
             </View>
 
-            {/* Formulario */}
             {showForm && (
               <View style={{ padding: 14, borderBottomWidth: 1, borderBottomColor: C.border, gap: 8 }}>
                 <TextInput style={styles.input} placeholder="Tu nombre (opcional)"
@@ -180,7 +172,6 @@ export default function LostPetDetailScreen({
               </View>
             )}
 
-            {/* Lista de avistamientos */}
             {sightings.length === 0 && !showForm ? (
               <View style={{ padding: 20, alignItems: 'center' }}>
                 <Text style={{ fontSize: 28 }}>👀</Text>
@@ -202,7 +193,6 @@ export default function LostPetDetailScreen({
                           {fmtDate(s.created_at)}
                         </Text>
                       </View>
-                      {/* Solo el autor del avistamiento puede eliminarlo */}
                       {userId && userId === s.user_id && (
                         <TouchableOpacity onPress={() => Alert.alert(
                           'Eliminar avistamiento', '¿Eliminar este reporte?',
@@ -223,7 +213,6 @@ export default function LostPetDetailScreen({
             )}
           </View>
 
-          {/* Volver */}
           <TouchableOpacity style={[styles.btnGhost, { marginBottom: 6 }]}
             onPress={() => setScreen('LostPetList')} activeOpacity={0.85}>
             <Text style={styles.btnGhostText}>← Ver lista</Text>

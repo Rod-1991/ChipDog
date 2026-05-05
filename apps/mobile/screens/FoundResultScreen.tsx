@@ -3,15 +3,13 @@ import { styles } from '../styles';
 import { C } from '../constants/colors';
 import Card from '../components/Card';
 import InfoRow from '../components/InfoRow';
-import type { FoundPet, Screen } from '../types';
+import { useAppStore } from '../store/app';
+import { usePetsStore } from '../store/pets';
 
-type FoundResultScreenProps = {
-  foundPet: FoundPet | null;
-  isLoggedIn: boolean;
-  setScreen: (s: Screen) => void;
-};
+export default function FoundResultScreen() {
+  const { screen, setScreen, isLoggedIn } = useAppStore();
+  const { foundPet } = usePetsStore();
 
-export default function FoundResultScreen({ foundPet, isLoggedIn, setScreen }: FoundResultScreenProps) {
   return (
     <View style={styles.foundWrap}>
       {foundPet ? (

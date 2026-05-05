@@ -2,26 +2,22 @@ import { Text, TouchableOpacity, View } from 'react-native';
 import { styles } from '../styles';
 import { C } from '../constants/colors';
 import Card from '../components/Card';
-import type { Pet, PetMember, Screen } from '../types';
+import { useAppStore } from '../store/app';
+import { usePetsStore } from '../store/pets';
+import { useCoOwnerStore } from '../store/coOwner';
 
-type PetMembersScreenProps = {
-  petMembers: PetMember[];
-  selectedPet: Pet | null;
-  loading: boolean;
-  removeCoOwner: (id: number) => void;
-  setInviteEmail: (email: string) => void;
-  setScreen: (s: Screen) => void;
-};
+export default function PetMembersScreen() {
+  const setScreen = useAppStore((s) => s.setScreen);
+  const loading = useAppStore((s) => s.loading);
+  const { selectedPet } = usePetsStore();
+  const { petMembers, removeCoOwner } = useCoOwnerStore();
 
-export default function PetMembersScreen({
-  petMembers, selectedPet, loading, removeCoOwner, setInviteEmail, setScreen,
-}: PetMembersScreenProps) {
   const accepted = petMembers.filter(m => m.status === 'accepted');
   const pending  = petMembers.filter(m => m.status === 'pending');
 
   return (
     <View style={styles.form}>
-      <TouchableOpacity style={styles.btnPrimary} onPress={() => { setInviteEmail(''); setScreen('InviteCoOwner'); }} activeOpacity={0.85}>
+      <TouchableOpacity style={styles.btnPrimary} onPress={() => setScreen('InviteCoOwner')} activeOpacity={0.85}>
         <Text style={styles.btnPrimaryText}>+ Invitar co-dueño</Text>
       </TouchableOpacity>
 
@@ -33,7 +29,7 @@ export default function PetMembersScreen({
                 <Text style={{ fontSize: 18 }}>👤</Text>
               </View>
               <Text style={{ flex: 1, color: C.text, fontWeight: '600', fontSize: 14 }}>{m.invited_email}</Text>
-              <TouchableOpacity onPress={() => removeCoOwner(m.id)} activeOpacity={0.7}>
+              <TouchableOpacity onPress={() => selectedPet && removeCoOwner(m.id, selectedPet.id)} activeOpacity={0.7}>
                 <Text style={{ color: C.danger, fontWeight: '700', fontSize: 13 }}>Eliminar</Text>
               </TouchableOpacity>
             </View>
@@ -52,7 +48,7 @@ export default function PetMembersScreen({
                 <Text style={{ color: C.text, fontWeight: '600', fontSize: 14 }}>{m.invited_email}</Text>
                 <Text style={{ color: C.textMuted, fontSize: 12 }}>Pendiente de aceptar</Text>
               </View>
-              <TouchableOpacity onPress={() => removeCoOwner(m.id)} activeOpacity={0.7}>
+              <TouchableOpacity onPress={() => selectedPet && removeCoOwner(m.id, selectedPet.id)} activeOpacity={0.7}>
                 <Text style={{ color: C.danger, fontWeight: '700', fontSize: 13 }}>Cancelar</Text>
               </TouchableOpacity>
             </View>

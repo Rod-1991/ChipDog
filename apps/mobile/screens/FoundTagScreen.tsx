@@ -1,30 +1,51 @@
+import { useState } from 'react';
 import { Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { styles } from '../styles';
 import { C } from '../constants/colors';
-import type { Screen } from '../types';
+import { useAppStore } from '../store/app';
+import { usePetsStore } from '../store/pets';
 
-type FoundTagScreenProps = {
-  foundCode: string;
-  setFoundCode: (v: string) => void;
-  loading: boolean;
-  isLoggedIn: boolean;
-  handleFoundLookup: () => void;
-  readNfcTagForFound: () => void;
-  setQrScanned: (v: boolean) => void;
-  setScreen: (s: Screen) => void;
-};
+let NfcManager: any = null;
+let NfcTech: any = null;
+try {
+  const nfc = require('react-native-nfc-manager');
+  NfcManager = nfc.default;
+  NfcTech = nfc.NfcTech;
+} catch { /* Expo Go o dispositivo sin NFC */ }
 
-export default function FoundTagScreen({
-  foundCode, setFoundCode, loading, isLoggedIn,
-  handleFoundLookup, readNfcTagForFound, setQrScanned, setScreen,
-}: FoundTagScreenProps) {
+export default function FoundTagScreen() {
+  const { loading, isLoggedIn, setScreen } = useAppStore();
+  const { lookupTagCode } = usePetsStore();
+
+  const [foundCode, setFoundCode] = useState('');
+  const [qrScanned, setQrScanned] = useState(false);
+
+  const handleFoundLookup = async () => {
+    if (!foundCode.trim()) return;
+    await lookupTagCode(foundCode.trim());
+    setScreen('FoundResult');
+  };
+
+  const readNfcTagForFound = async () => {
+    try {
+      await NfcManager.requestTechnology(NfcTech.Ndef);
+      const tag = await NfcManager.getTag();
+      const id = tag?.id;
+      if (!id) return;
+      const uid = (id as number[]).map((b) => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+      await lookupTagCode(uid);
+      setScreen('FoundResult');
+    } catch { /* usuario canceló o error NFC */ } finally {
+      try { await NfcManager.cancelTechnologyRequest(); } catch {}
+    }
+  };
+
   return (
     <View style={styles.foundWrap}>
       <Text style={styles.foundEmoji}>🐕</Text>
       <Text style={styles.foundTitle}>¿Encontraste a alguien?</Text>
       <Text style={styles.foundSubtitle}>Escanea el tag NFC, el QR del collar o ingresa el código / N° de chip RFID</Text>
 
-      {/* Botón NFC */}
       <TouchableOpacity
         style={[styles.btnPrimary, { flexDirection: 'row', justifyContent: 'center', gap: 10, paddingVertical: 16, width: '100%' }]}
         onPress={readNfcTagForFound} activeOpacity={0.85}>
@@ -32,7 +53,6 @@ export default function FoundTagScreen({
         <Text style={[styles.btnPrimaryText, { fontSize: 16 }]}>Acercar al tag NFC</Text>
       </TouchableOpacity>
 
-      {/* Botón escanear QR */}
       <TouchableOpacity
         style={[styles.btnPrimary, { flexDirection: 'row', justifyContent: 'center', gap: 10, paddingVertical: 16, width: '100%', backgroundColor: C.dark }]}
         onPress={() => { setQrScanned(false); setScreen('ScanTag'); }} activeOpacity={0.85}>
@@ -40,7 +60,6 @@ export default function FoundTagScreen({
         <Text style={[styles.btnPrimaryText, { fontSize: 16 }]}>Escanear QR del collar</Text>
       </TouchableOpacity>
 
-      {/* Divisor */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, width: '100%', marginVertical: 4 }}>
         <View style={{ flex: 1, height: 1, backgroundColor: C.border }} />
         <Text style={{ color: C.textMuted, fontSize: 13, fontWeight: '600' }}>o ingresa el código / chip RFID</Text>

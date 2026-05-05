@@ -1,24 +1,50 @@
-import { Alert, Text, TouchableOpacity, View } from 'react-native';
+import { useState } from 'react';
+import { Text, TouchableOpacity, View } from 'react-native';
 import { styles } from '../styles';
 import { C } from '../constants/colors';
 import Card from '../components/Card';
-import type { Pet, Screen } from '../types';
+import { useAppStore } from '../store/app';
+import { usePetsStore } from '../store/pets';
 
-type LinkTagScreenProps = {
-  nfcStatus: 'idle' | 'scanning' | 'success' | 'error';
-  setNfcStatus: (s: 'idle' | 'scanning' | 'success' | 'error') => void;
-  nfcError: string;
-  setNfcError: (v: string) => void;
-  selectedPet: Pet | null;
-  loading: boolean;
-  readNfcTagForLink: () => void;
-  setScreen: (s: Screen) => void;
-};
+let NfcManager: any = null;
+let NfcTech: any = null;
+try {
+  const nfc = require('react-native-nfc-manager');
+  NfcManager = nfc.default;
+  NfcTech = nfc.NfcTech;
+} catch { /* Expo Go o dispositivo sin NFC */ }
 
-export default function LinkTagScreen({
-  nfcStatus, setNfcStatus, nfcError, setNfcError,
-  selectedPet, loading, readNfcTagForLink, setScreen,
-}: LinkTagScreenProps) {
+export default function LinkTagScreen() {
+  const { loading, setScreen } = useAppStore();
+  const { selectedPet, linkTagByUid } = usePetsStore();
+
+  const [nfcStatus, setNfcStatus] = useState<'idle' | 'scanning' | 'success' | 'error'>('idle');
+  const [nfcError, setNfcError] = useState('');
+
+  const readNfcTagForLink = async () => {
+    setNfcStatus('scanning');
+    setNfcError('');
+    try {
+      await NfcManager.requestTechnology(NfcTech.Ndef);
+      const tag = await NfcManager.getTag();
+      const id = tag?.id;
+      if (!id) throw new Error('No se pudo leer el UID del tag');
+      const uid = (id as number[]).map((b) => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+      const ok = await linkTagByUid(uid);
+      if (ok) {
+        setNfcStatus('success');
+      } else {
+        setNfcStatus('error');
+        setNfcError('No se pudo vincular el tag.');
+      }
+    } catch (e: any) {
+      setNfcStatus('error');
+      setNfcError(e.message ?? 'Error al leer el tag NFC');
+    } finally {
+      try { await NfcManager.cancelTechnologyRequest(); } catch {}
+    }
+  };
+
   return (
     <View style={styles.form}>
       <Card title="🏷️  Vincular tag NFC" accent={C.primary}>

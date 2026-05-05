@@ -5,24 +5,10 @@ import { styles } from '../../styles';
 import { C } from '../../constants/colors';
 import Card from '../../components/Card';
 import InfoRow from '../../components/InfoRow';
-import type { FoodEntry, Pet, WeightEntry } from '../../types';
-import type { PetDraft } from './PetInfoTab';
-
-type Props = {
-  isEditing: boolean;
-  setIsEditing: (v: boolean) => void;
-  petDraft: PetDraft;
-  setPetDraft: (fn: (p: PetDraft) => PetDraft) => void;
-  loading: boolean;
-  savePetProfile: () => void;
-  selectedPet: Pet;
-  weightHistory: WeightEntry[];
-  foodHistory: FoodEntry[];
-  saveWeightEntry: (petId: number, weight_kg: number, measured_at: string, notes: string) => Promise<void>;
-  deleteWeightEntry: (id: number, petId: number) => Promise<void>;
-  saveFoodEntry: (petId: number, food_brand: string, started_at: string, notes: string) => Promise<void>;
-  deleteFoodEntry: (id: number, petId: number) => Promise<void>;
-};
+import type { WeightEntry } from '../../types';
+import { useAppStore } from '../../store/app';
+import { usePetsStore } from '../../store/pets';
+import { useNutritionStore } from '../../store/nutrition';
 
 type SubTab = 'resumen' | 'peso' | 'comida';
 
@@ -32,7 +18,6 @@ const SUB_TABS: { key: SubTab; label: string }[] = [
   { key: 'comida',  label: 'Comida' },
 ];
 
-// ── Mini SVG weight chart ─────────────────────────────────────────────────────
 function WeightChart({ entries }: { entries: WeightEntry[] }) {
   const sorted = [...entries].sort((a, b) => a.measured_at.localeCompare(b.measured_at));
   if (sorted.length < 2) {
@@ -59,17 +44,11 @@ function WeightChart({ entries }: { entries: WeightEntry[] }) {
   const scaleX = (i: number) => PAD.left + (i / (sorted.length - 1)) * chartW;
   const scaleY = (w: number) => PAD.top + chartH - ((w - minW) / range) * chartH;
 
-  // Build SVG polyline path
   const pts = sorted.map((e, i) => `${scaleX(i)},${scaleY(e.weight_kg)}`);
   const d = 'M ' + pts.join(' L ');
-
-  // Area fill
   const areaD = `M ${scaleX(0)},${PAD.top + chartH} L ${pts.join(' L ')} L ${scaleX(sorted.length - 1)},${PAD.top + chartH} Z`;
 
-  // Y axis labels (3 levels)
   const yLabels = [minW, (minW + maxW) / 2, maxW].map(v => Math.round(v * 10) / 10);
-
-  // X axis: show first, middle, last date (deduplicated)
   const xIndices = [...new Set([0, Math.floor((sorted.length - 1) / 2), sorted.length - 1])];
   const fmtDate = (iso: string) => {
     const d = new Date(iso);
@@ -79,27 +58,20 @@ function WeightChart({ entries }: { entries: WeightEntry[] }) {
   return (
     <View style={{ alignItems: 'center', marginVertical: 8 }}>
       <Svg width={W} height={H}>
-        {/* Grid lines */}
         {yLabels.map((_, idx) => {
           const y = scaleY(yLabels[idx]);
           return <Line key={`grid-${idx}`} x1={PAD.left} y1={y} x2={W - PAD.right} y2={y}
             stroke={C.border} strokeWidth={1} />;
         })}
-        {/* Y labels */}
         {yLabels.map((val, idx) => (
           <SvgText key={`ylabel-${idx}`} x={PAD.left - 4} y={scaleY(val) + 4}
             fontSize={9} fill={C.textMuted} textAnchor="end">{val}</SvgText>
         ))}
-        {/* Area fill */}
         <Path d={areaD} fill={C.primary} fillOpacity={0.12} />
-        {/* Line */}
         <Path d={d} fill="none" stroke={C.primary} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
-        {/* Dots */}
         {sorted.map((e, i) => (
-          <Circle key={`dot-${i}`} cx={scaleX(i)} cy={scaleY(e.weight_kg)}
-            r={4} fill={C.primary} />
+          <Circle key={`dot-${i}`} cx={scaleX(i)} cy={scaleY(e.weight_kg)} r={4} fill={C.primary} />
         ))}
-        {/* X labels */}
         {xIndices.map(i => (
           <SvgText key={`xlabel-${i}`} x={scaleX(i)} y={H - 4}
             fontSize={9} fill={C.textMuted} textAnchor="middle">
@@ -111,31 +83,33 @@ function WeightChart({ entries }: { entries: WeightEntry[] }) {
   );
 }
 
-// ── Helper: today as YYYY-MM-DD ───────────────────────────────────────────────
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export default function PetNutricionTab({
-  isEditing, setIsEditing, petDraft, setPetDraft, loading, savePetProfile,
-  selectedPet, weightHistory, foodHistory,
-  saveWeightEntry, deleteWeightEntry, saveFoodEntry, deleteFoodEntry,
-}: Props) {
-  const [subTab, setSubTab] = useState<SubTab>('resumen');
+type Props = {
+  isEditing: boolean;
+  setIsEditing: (v: boolean) => void;
+};
 
-  // Weight form
+export default function PetNutricionTab({ isEditing, setIsEditing }: Props) {
+  const loading = useAppStore((s) => s.loading);
+  const { selectedPet, petDraft, setPetDraft, savePetProfile } = usePetsStore();
+  const { weightHistory, foodHistory, saveWeightEntry, deleteWeightEntry, saveFoodEntry, deleteFoodEntry } = useNutritionStore();
+
+  const [subTab, setSubTab] = useState<SubTab>('resumen');
   const [showWeightForm, setShowWeightForm] = useState(false);
   const [wKg, setWKg] = useState('');
   const [wDate, setWDate] = useState(todayISO());
   const [wNotes, setWNotes] = useState('');
   const [savingW, setSavingW] = useState(false);
-
-  // Food form
   const [showFoodForm, setShowFoodForm] = useState(false);
   const [fBrand, setFBrand] = useState('');
   const [fDate, setFDate] = useState(todayISO());
   const [fNotes, setFNotes] = useState('');
   const [savingF, setSavingF] = useState(false);
+
+  if (!selectedPet) return null;
 
   const handleSaveWeight = async () => {
     if (!wKg || isNaN(parseFloat(wKg))) { Alert.alert('Ingresa un peso válido'); return; }
@@ -170,7 +144,6 @@ export default function PetNutricionTab({
 
   return (
     <View style={styles.form}>
-      {/* Sub-tabs */}
       <View style={{ flexDirection: 'row', backgroundColor: C.white, borderRadius: 12,
         padding: 3, borderWidth: 1, borderColor: C.border, marginBottom: 12 }}>
         {SUB_TABS.map(t => (
@@ -184,7 +157,6 @@ export default function PetNutricionTab({
         ))}
       </View>
 
-      {/* ── RESUMEN ── */}
       {subTab === 'resumen' && (
         <>
           <Card title="🍖  Alimentación actual" accent={C.accent}>
@@ -233,7 +205,6 @@ export default function PetNutricionTab({
         </>
       )}
 
-      {/* ── PESO ── */}
       {subTab === 'peso' && (
         <>
           <Card title="📈  Historial de peso" accent={C.primary}>
@@ -293,7 +264,6 @@ export default function PetNutricionTab({
         </>
       )}
 
-      {/* ── COMIDA ── */}
       {subTab === 'comida' && (
         <>
           <Card title="🍖  Historial de alimentación" accent={C.accent}>
@@ -359,7 +329,6 @@ export default function PetNutricionTab({
         </>
       )}
 
-      {/* Editar notas (modo edición legacy) */}
       {isEditing && (
         <Card title="🍖  Notas de alimentación" accent={C.accent}>
           <Text style={styles.fieldLabel}>Marca / alimento</Text>
