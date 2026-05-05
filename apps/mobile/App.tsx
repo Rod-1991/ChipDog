@@ -694,27 +694,23 @@ export default function App() {
 
     const init = async () => {
       try {
-        setLoading(true);
-
         const { data, error } = await supabase.auth.getSession();
         if (!mounted) return;
 
-        if (error) {
+        if (error || !data.session) {
           setScreen('Login');
           return;
         }
 
-        if (data.session) {
-          setUserId(data.session.user.id);
-          setIsLoggedIn(true);
-          await Promise.all([fetchPets(), fetchUpcomingVaccines(), loadUserName(), loadUserProfile()]);
-          if (!mounted) return;
-          setScreen('Home');
-        } else {
-          setScreen('Login');
-        }
+        // Mostrar Home de inmediato — los datos llegan en segundo plano
+        setUserId(data.session.user.id);
+        setIsLoggedIn(true);
+        setScreen('Home');
+        setIsInitializing(false);
+
+        Promise.all([fetchPets(), fetchUpcomingVaccines(), loadUserName(), loadUserProfile()]);
       } finally {
-        if (mounted) { setLoading(false); setIsInitializing(false); }
+        if (mounted) setIsInitializing(false);
       }
     };
 
@@ -725,10 +721,9 @@ export default function App() {
 
       if (session) {
         setUserId(session.user.id);
-        await fetchPets();
-        await fetchUpcomingVaccines();
-        if (!mounted) return;
         setScreen('Home');
+        // Fetches en segundo plano
+        Promise.all([fetchPets(), fetchUpcomingVaccines(), loadUserName(), loadUserProfile()]);
       } else {
         setUserId(null);
         setPets([]);
