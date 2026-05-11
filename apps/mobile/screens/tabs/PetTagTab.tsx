@@ -1,26 +1,51 @@
+import { useState } from 'react';
 import { Alert, Text, TouchableOpacity, View } from 'react-native';
 import { styles } from '../../styles';
 import { C } from '../../constants/colors';
 import Card from '../../components/Card';
-import type { Pet } from '../../types';
+import { useAppStore } from '../../store/app';
+import { usePetsStore } from '../../store/pets';
 
-type Props = {
-  selectedPet: Pet;
-  petTags: { id: number; code: string }[];
-  nfcStatus: 'idle' | 'scanning' | 'success' | 'error';
-  setNfcStatus: (s: 'idle' | 'scanning' | 'success' | 'error') => void;
-  nfcError: string;
-  setNfcError: (v: string) => void;
-  loading: boolean;
-  readNfcTagForLink: () => void;
-  unlinkTag: (tagId: number) => Promise<void>;
-  fetchPetTags: (petId: number) => Promise<void>;
-};
+let NfcManager: any = null;
+let NfcTech: any = null;
+try {
+  const nfc = require('react-native-nfc-manager');
+  NfcManager = nfc.default;
+  NfcTech = nfc.NfcTech;
+} catch { /* Expo Go o dispositivo sin NFC */ }
 
-export default function PetTagTab({
-  selectedPet, petTags, nfcStatus, setNfcStatus, nfcError, setNfcError,
-  loading, readNfcTagForLink, unlinkTag, fetchPetTags,
-}: Props) {
+export default function PetTagTab() {
+  const loading = useAppStore((s) => s.loading);
+  const { selectedPet, petTags, linkTagByUid, unlinkTag, fetchPetTags } = usePetsStore();
+
+  const [nfcStatus, setNfcStatus] = useState<'idle' | 'scanning' | 'success' | 'error'>('idle');
+  const [nfcError, setNfcError] = useState('');
+
+  if (!selectedPet) return null;
+
+  const readNfcTagForLink = async () => {
+    setNfcStatus('scanning');
+    setNfcError('');
+    try {
+      await NfcManager.requestTechnology(NfcTech.Ndef);
+      const tag = await NfcManager.getTag();
+      const id = tag?.id;
+      if (!id) throw new Error('No se pudo leer el UID del tag');
+      const uid = (id as number[]).map((b) => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+      const ok = await linkTagByUid(uid);
+      if (ok) {
+        setNfcStatus('success');
+      } else {
+        setNfcStatus('error');
+        setNfcError('No se pudo vincular el tag.');
+      }
+    } catch (e: any) {
+      setNfcStatus('error');
+      setNfcError(e.message ?? 'Error al leer el tag NFC');
+    } finally {
+      try { await NfcManager.cancelTechnologyRequest(); } catch {}
+    }
+  };
 
   const handleUnlink = (tagId: number, code: string) => {
     Alert.alert(
@@ -35,8 +60,6 @@ export default function PetTagTab({
 
   return (
     <View style={styles.form}>
-
-      {/* Tags vinculados */}
       <Card title="📡  Tags vinculados" accent={C.primary}>
         {petTags.length === 0 ? (
           <View style={{ alignItems: 'center', paddingVertical: 16, gap: 8 }}>
@@ -76,7 +99,6 @@ export default function PetTagTab({
         )}
       </Card>
 
-      {/* Vincular nuevo tag */}
       <Card title="➕  Vincular nuevo tag" accent={C.dark}>
         <Text style={{ color: C.textLight, fontSize: 13, lineHeight: 19, marginBottom: 16 }}>
           Acerca el iPhone al tag NFC del collar. El identificador del chip

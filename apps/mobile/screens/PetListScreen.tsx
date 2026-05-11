@@ -1,20 +1,14 @@
 import { Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { C } from '../constants/colors';
-import type { Pet, Screen } from '../types';
+import { useAppStore } from '../store/app';
+import { usePetsStore } from '../store/pets';
 
 const CARD_BG = ['#E0FAF6', '#FFF0E6', '#E8F8F0', '#E8F4FF', '#F3EEFF', '#FFF8E1'];
 
-type PetListScreenProps = {
-  pets: Pet[];
-  petSignedUrls: Record<number, string | null>;
-  loadPetDetail: (petId: number) => Promise<void>;
-  togglePetFeatured: (petId: number, currentFeatured: boolean) => Promise<void>;
-  setScreen: (s: Screen) => void;
-};
+export default function PetListScreen() {
+  const setScreen = useAppStore((s) => s.setScreen);
+  const { pets, petSignedUrls, loadPetDetail, togglePetFeatured } = usePetsStore();
 
-export default function PetListScreen({
-  pets, petSignedUrls, loadPetDetail, togglePetFeatured, setScreen,
-}: PetListScreenProps) {
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
 
@@ -143,10 +137,10 @@ export default function PetListScreen({
         paddingVertical: 10, paddingBottom: 24,
       }}>
         {[
-          { icon: '🏠', label: 'Inicio', target: 'Home' as Screen },
-          { icon: '🐾', label: 'Mascotas', target: 'PetList' as Screen },
-          { icon: '🗺️', label: 'Mapa', target: 'NearbyMap' as Screen },
-          { icon: '👤', label: 'Perfil', target: 'Profile' as Screen },
+          { icon: '🏠', label: 'Inicio', target: 'Home' as const },
+          { icon: '🐾', label: 'Mascotas', target: 'PetList' as const },
+          { icon: '🗺️', label: 'Mapa', target: 'NearbyMap' as const },
+          { icon: '👤', label: 'Perfil', target: 'Profile' as const },
         ].map(tab => {
           const active = tab.target === 'PetList';
           return (

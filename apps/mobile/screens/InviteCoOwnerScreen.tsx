@@ -1,20 +1,26 @@
+import { useState } from 'react';
 import { Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { styles } from '../styles';
 import { C } from '../constants/colors';
 import Card from '../components/Card';
-import type { Pet } from '../types';
+import { useAppStore } from '../store/app';
+import { usePetsStore } from '../store/pets';
+import { useCoOwnerStore } from '../store/coOwner';
 
-type InviteCoOwnerScreenProps = {
-  selectedPet: Pet | null;
-  inviteEmail: string;
-  setInviteEmail: (email: string) => void;
-  loading: boolean;
-  sendCoOwnerInvite: () => void;
-};
+export default function InviteCoOwnerScreen() {
+  const loading = useAppStore((s) => s.loading);
+  const setScreen = useAppStore((s) => s.setScreen);
+  const { selectedPet } = usePetsStore();
+  const { sendCoOwnerInvite } = useCoOwnerStore();
 
-export default function InviteCoOwnerScreen({
-  selectedPet, inviteEmail, setInviteEmail, loading, sendCoOwnerInvite,
-}: InviteCoOwnerScreenProps) {
+  const [inviteEmail, setInviteEmail] = useState('');
+
+  const handleSend = async () => {
+    if (!selectedPet) return;
+    const ok = await sendCoOwnerInvite(selectedPet.id, inviteEmail.trim());
+    if (ok) { setInviteEmail(''); setScreen('PetMembers'); }
+  };
+
   return (
     <View style={styles.form}>
       <Card title={`Invitar co-dueño para ${selectedPet?.name}`} accent={C.primary}>
@@ -38,7 +44,7 @@ export default function InviteCoOwnerScreen({
         />
       </Card>
 
-      <TouchableOpacity style={styles.btnPrimary} onPress={sendCoOwnerInvite} disabled={loading} activeOpacity={0.85}>
+      <TouchableOpacity style={styles.btnPrimary} onPress={handleSend} disabled={loading} activeOpacity={0.85}>
         <Text style={styles.btnPrimaryText}>{loading ? 'Enviando...' : 'Enviar invitación'}</Text>
       </TouchableOpacity>
     </View>

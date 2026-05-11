@@ -4,10 +4,8 @@ import { C } from '../../constants/colors';
 import { buildCalendarDays, formatBirthDateShort, parseBirthDateText } from '../../utils/helpers';
 import Card from '../../components/Card';
 import InfoRow from '../../components/InfoRow';
-import type { Pet } from '../../types';
-
-const SEX_OPTS = ['Macho', 'Hembra'];
-const BLOOD_TYPES = ['DEA 1.1+', 'DEA 1.1-', 'DEA 1.2+', 'DEA 1.2-', 'No sé'];
+import { useAppStore } from '../../store/app';
+import { usePetsStore } from '../../store/pets';
 
 export type PetDraft = {
   color: string;
@@ -36,26 +34,27 @@ export type PetDraft = {
   food_notes: string;
 };
 
+const SEX_OPTS = ['Macho', 'Hembra'];
+const BLOOD_TYPES = ['DEA 1.1+', 'DEA 1.1-', 'DEA 1.2+', 'DEA 1.2-', 'No sé'];
+
 type Props = {
-  selectedPet: Pet;
   isEditing: boolean;
   setIsEditing: (v: boolean) => void;
-  petDraft: PetDraft;
-  setPetDraft: (fn: (p: PetDraft) => PetDraft) => void;
   showBirthCalendar: boolean;
   setShowBirthCalendar: (fn: (v: boolean) => boolean) => void;
   birthCalendarMonth: Date;
   setBirthCalendarMonth: (fn: (p: Date) => Date) => void;
-  loading: boolean;
-  savePetProfile: () => void;
-  petTags: { id: number; code: string }[];
 };
 
 export default function PetInfoTab({
-  selectedPet, isEditing, setIsEditing, petDraft, setPetDraft,
-  showBirthCalendar, setShowBirthCalendar, birthCalendarMonth, setBirthCalendarMonth,
-  loading, savePetProfile, petTags,
+  isEditing, setIsEditing,
+  showBirthCalendar, setShowBirthCalendar,
+  birthCalendarMonth, setBirthCalendarMonth,
 }: Props) {
+  const loading = useAppStore((s) => s.loading);
+  const { selectedPet, petDraft, setPetDraft, petTags, savePetProfile } = usePetsStore();
+
+  if (!selectedPet) return null;
 
   if (!isEditing) {
     return (

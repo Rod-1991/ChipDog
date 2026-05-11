@@ -3,22 +3,20 @@ import { styles } from '../../styles';
 import { C } from '../../constants/colors';
 import Card from '../../components/Card';
 import InfoRow from '../../components/InfoRow';
-import type { Pet } from '../../types';
-import type { PetDraft } from './PetInfoTab';
+import { useAppStore } from '../../store/app';
+import { usePetsStore } from '../../store/pets';
 
 type Props = {
-  selectedPet: Pet;
   isEditing: boolean;
   setIsEditing: (v: boolean) => void;
-  petDraft: PetDraft;
-  setPetDraft: (fn: (p: PetDraft) => PetDraft) => void;
-  loading: boolean;
-  savePetProfile: () => void;
 };
 
-export default function PetContactTab({
-  selectedPet, isEditing, setIsEditing, petDraft, setPetDraft, loading, savePetProfile,
-}: Props) {
+export default function PetContactTab({ isEditing, setIsEditing }: Props) {
+  const loading = useAppStore((s) => s.loading);
+  const { selectedPet, petDraft, setPetDraft, savePetProfile } = usePetsStore();
+
+  if (!selectedPet) return null;
+
   const publicBanner = (
     <View style={{ backgroundColor: C.warningLight, borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 4 }}>
       <Text style={{ fontSize: 20 }}>👁</Text>

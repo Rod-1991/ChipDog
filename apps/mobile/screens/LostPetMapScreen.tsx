@@ -1,26 +1,73 @@
-import { Text, TouchableOpacity, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, Text, TouchableOpacity, View } from 'react-native';
 import MapView, { Circle, Marker } from 'react-native-maps';
+import * as Location from 'expo-location';
 import { styles } from '../styles';
-import type { Pet, Screen } from '../types';
+import { supabase } from '../lib/supabase';
+import { useAppStore } from '../store/app';
+import { usePetsStore } from '../store/pets';
 
 type LostPin = { lat: number; lng: number };
 
-type LostPetMapScreenProps = {
-  lostPin: LostPin | null;
-  setLostPin: (pin: LostPin | null) => void;
-  lostRadius: number;
-  setLostRadius: (r: number) => void;
-  selectedPet: Pet | null;
-  loading: boolean;
-  saveLostLocation: () => void;
-  setScreen: (s: Screen) => void;
-};
+const RADIUS_OPTIONS = [100, 250, 500, 1000, 2000];
 
-export default function LostPetMapScreen({
-  lostPin, setLostPin, lostRadius, setLostRadius,
-  selectedPet, loading, saveLostLocation, setScreen,
-}: LostPetMapScreenProps) {
-  const RADIUS_OPTIONS = [100, 250, 500, 1000, 2000];
+export default function LostPetMapScreen() {
+  const { loading, setLoading, setScreen } = useAppStore();
+  const { selectedPet, fetchPets } = usePetsStore();
+
+  const mapRef = useRef<MapView>(null);
+
+  const [lostPin, setLostPin] = useState<LostPin | null>(
+    selectedPet?.lost_lat && selectedPet?.lost_lng
+      ? { lat: selectedPet.lost_lat, lng: selectedPet.lost_lng }
+      : null
+  );
+  const [lostRadius, setLostRadius] = useState(selectedPet?.lost_radius_meters ?? 500);
+
+  useEffect(() => {
+    if (lostPin) return;
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Ubicación no disponible', 'Toca el mapa para marcar dónde se perdió tu mascota.');
+        return;
+      }
+      setLoading(true);
+      try {
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const coords = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+        setTimeout(() => {
+          mapRef.current?.animateToRegion({
+            latitude: coords.lat, longitude: coords.lng,
+            latitudeDelta: 0.008, longitudeDelta: 0.008,
+          }, 600);
+        }, 300);
+      } catch {
+        Alert.alert('Ubicación no disponible', 'Toca el mapa para marcar dónde se perdió tu mascota.');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const saveLostLocation = async () => {
+    if (!lostPin || !selectedPet) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('pets').update({
+        is_lost: true,
+        lost_lat: lostPin.lat,
+        lost_lng: lostPin.lng,
+        lost_radius_meters: lostRadius,
+      }).eq('id', selectedPet.id);
+      if (error) { Alert.alert('Error', error.message); return; }
+      await fetchPets();
+      setScreen('PetDetail');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const defaultRegion = {
     latitude:      lostPin?.lat ?? -33.4489,
     longitude:     lostPin?.lng ?? -70.6693,
@@ -30,7 +77,6 @@ export default function LostPetMapScreen({
 
   return (
     <View style={styles.form}>
-      {/* Instrucción */}
       <View style={styles.lostMapTip}>
         <Text style={styles.lostMapTipText}>
           {lostPin
@@ -39,9 +85,9 @@ export default function LostPetMapScreen({
         </Text>
       </View>
 
-      {/* Mapa */}
       <View style={styles.lostMapWrap}>
         <MapView
+          ref={mapRef}
           style={{ flex: 1 }}
           initialRegion={defaultRegion}
           onPress={(e) => setLostPin({
@@ -75,7 +121,6 @@ export default function LostPetMapScreen({
         </MapView>
       </View>
 
-      {/* Selector de radio */}
       <View style={styles.card}>
         <Text style={[styles.cardHeader, { marginBottom: 12 }]}>Radio de búsqueda</Text>
         <View style={styles.lostRadiusRow}>
@@ -94,7 +139,6 @@ export default function LostPetMapScreen({
         </View>
       </View>
 
-      {/* Botones */}
       <TouchableOpacity
         style={[styles.btnPrimary, !lostPin && { opacity: 0.5 }]}
         onPress={saveLostLocation}

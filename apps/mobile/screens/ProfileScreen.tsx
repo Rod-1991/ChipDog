@@ -5,42 +5,59 @@ import { styles } from '../styles';
 import { C } from '../constants/colors';
 import { COMUNAS_CHILE } from '../constants/comunas';
 import { formatRut } from '../utils/helpers';
-import type { Pet, PetMemberInvitation, Screen, UserProfile } from '../types';
+import type { Screen, UserProfile } from '../types';
+import { useAppStore } from '../store/app';
+import { useUserStore } from '../store/user';
+import { usePetsStore } from '../store/pets';
+import { useCoOwnerStore } from '../store/coOwner';
 
 const SEX_OPTIONS = ['Masculino', 'Femenino', 'Prefiero no decir'];
 
 type ProfileDraft = Omit<UserProfile, 'id'>;
 
-type ProfileScreenProps = {
-  loading: boolean;
-  profileDraft: ProfileDraft;
-  setProfileDraft: (fn: (p: ProfileDraft) => ProfileDraft) => void;
-  isEditingProfile: boolean;
-  setIsEditingProfile: (v: boolean) => void;
-  showProfileSexDropdown: boolean;
-  setShowProfileSexDropdown: (fn: (v: boolean) => boolean) => void;
-  showProfileCommuneDropdown: boolean;
-  setShowProfileCommuneDropdown: (fn: (v: boolean) => boolean) => void;
-  communeSearch: string;
-  setCommuneSearch: (v: string) => void;
-  pendingInvitations: PetMemberInvitation[];
-  respondInvitation: (memberId: number, accept: boolean) => void;
-  saveUserProfile: () => void;
-  handleLogout: () => void;
-  pets: Pet[];
-  userEmail: string | null;
-  setScreen: (s: Screen) => void;
+const EMPTY_DRAFT: ProfileDraft = {
+  first_name: '', last_name: '', phone: '', rut: '',
+  sex: '', birth_year: 0, commune: '',
 };
 
-export default function ProfileScreen({
-  loading, profileDraft, setProfileDraft, isEditingProfile, setIsEditingProfile,
-  showProfileSexDropdown, setShowProfileSexDropdown,
-  showProfileCommuneDropdown, setShowProfileCommuneDropdown,
-  communeSearch, setCommuneSearch, pendingInvitations,
-  respondInvitation, saveUserProfile, handleLogout,
-  pets, userEmail, setScreen,
-}: ProfileScreenProps) {
+type Props = { handleLogout: () => void };
+
+export default function ProfileScreen({ handleLogout }: Props) {
+  const { loading, setScreen } = useAppStore();
+  const { userProfile, userEmail, saveUserProfile } = useUserStore();
+  const pets = usePetsStore((s) => s.pets);
+  const { pendingInvitations, respondInvitation } = useCoOwnerStore();
+
+  const [profileDraft, setProfileDraft] = useState<ProfileDraft>(
+    userProfile ? {
+      first_name: userProfile.first_name,
+      last_name: userProfile.last_name,
+      phone: userProfile.phone,
+      rut: userProfile.rut,
+      sex: userProfile.sex,
+      birth_year: userProfile.birth_year,
+      commune: userProfile.commune,
+    } : EMPTY_DRAFT
+  );
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [showProfileSexDropdown, setShowProfileSexDropdown] = useState(false);
+  const [showProfileCommuneDropdown, setShowProfileCommuneDropdown] = useState(false);
+  const [communeSearch, setCommuneSearch] = useState('');
   const [tagCount, setTagCount] = useState(0);
+
+  useEffect(() => {
+    if (userProfile) {
+      setProfileDraft({
+        first_name: userProfile.first_name,
+        last_name: userProfile.last_name,
+        phone: userProfile.phone,
+        rut: userProfile.rut,
+        sex: userProfile.sex,
+        birth_year: userProfile.birth_year,
+        commune: userProfile.commune,
+      });
+    }
+  }, [userProfile]);
 
   useEffect(() => {
     (async () => {
@@ -51,10 +68,15 @@ export default function ProfileScreen({
         .select('pet_id')
         .in('pet_id', petIds)
         .eq('status', 'linked');
-      const unique = new Set((data ?? []).map(t => t.pet_id)).size;
+      const unique = new Set((data ?? []).map((t: { pet_id: number }) => t.pet_id)).size;
       setTagCount(unique);
     })();
   }, [pets]);
+
+  const handleSaveProfile = async () => {
+    const ok = await saveUserProfile(profileDraft);
+    if (ok) setIsEditingProfile(false);
+  };
 
   const initials =
     (profileDraft.first_name?.[0] ?? '').toUpperCase() +
@@ -63,14 +85,12 @@ export default function ProfileScreen({
   const fullName = `${profileDraft.first_name} ${profileDraft.last_name}`.trim() || 'Sin nombre';
   const lostCount = pets.filter(p => p.is_lost).length;
 
-  // ── MODO EDICIÓN (pantalla completa) ─────────────────────────────────────
   if (isEditingProfile) {
     return (
       <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        {/* Header */}
         <View style={{ backgroundColor: C.primaryDark, paddingTop: 56, paddingBottom: 16,
           paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <TouchableOpacity onPress={() => { setIsEditingProfile(false); setShowProfileSexDropdown(() => false); }}
+          <TouchableOpacity onPress={() => { setIsEditingProfile(false); setShowProfileSexDropdown(false); }}
             activeOpacity={0.7} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <Text style={{ fontSize: 22, color: C.white, lineHeight: 26 }}>‹</Text>
           </TouchableOpacity>
@@ -81,7 +101,6 @@ export default function ProfileScreen({
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ padding: 16, paddingBottom: 40, gap: 12 }}>
 
-          {/* Datos personales */}
           <View style={{ backgroundColor: C.white, borderRadius: 20, padding: 16,
             borderWidth: 1, borderColor: C.border }}>
             <Text style={{ fontSize: 10, fontWeight: '800', color: C.primary,
@@ -133,7 +152,7 @@ export default function ProfileScreen({
                 {SEX_OPTIONS.map(opt => (
                   <TouchableOpacity key={opt}
                     style={[styles.selectOption, profileDraft.sex === opt && styles.selectOptionActive]}
-                    onPress={() => { setProfileDraft(p => ({ ...p, sex: opt })); setShowProfileSexDropdown(() => false); }}>
+                    onPress={() => { setProfileDraft(p => ({ ...p, sex: opt })); setShowProfileSexDropdown(false); }}>
                     <Text style={[styles.selectOptionText, profileDraft.sex === opt && styles.selectOptionTextActive]}>
                       {opt}
                     </Text>
@@ -159,7 +178,7 @@ export default function ProfileScreen({
                   {COMUNAS_CHILE.filter(c => c.toLowerCase().includes(communeSearch.toLowerCase())).map(c => (
                     <TouchableOpacity key={c}
                       style={[styles.selectOption, profileDraft.commune === c && styles.selectOptionActive]}
-                      onPress={() => { setProfileDraft(p => ({ ...p, commune: c })); setShowProfileCommuneDropdown(() => false); setCommuneSearch(''); }}>
+                      onPress={() => { setProfileDraft(p => ({ ...p, commune: c })); setShowProfileCommuneDropdown(false); setCommuneSearch(''); }}>
                       <Text style={[styles.selectOptionText, profileDraft.commune === c && styles.selectOptionTextActive]}>{c}</Text>
                     </TouchableOpacity>
                   ))}
@@ -168,11 +187,11 @@ export default function ProfileScreen({
             )}
           </View>
 
-          <TouchableOpacity style={styles.btnPrimary} onPress={saveUserProfile} disabled={loading} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.btnPrimary} onPress={handleSaveProfile} disabled={loading} activeOpacity={0.85}>
             <Text style={styles.btnPrimaryText}>{loading ? 'Guardando...' : 'Guardar cambios'}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.btnGhost}
-            onPress={() => { setIsEditingProfile(false); setShowProfileSexDropdown(() => false); }} activeOpacity={0.7}>
+            onPress={() => { setIsEditingProfile(false); setShowProfileSexDropdown(false); }} activeOpacity={0.7}>
             <Text style={styles.btnGhostText}>Cancelar</Text>
           </TouchableOpacity>
         </ScrollView>
@@ -180,12 +199,10 @@ export default function ProfileScreen({
     );
   }
 
-  // ── VISTA NORMAL ─────────────────────────────────────────────────────────
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
 
-        {/* Header */}
         <View style={{ backgroundColor: C.primaryDark, paddingTop: 56, paddingBottom: 52,
           paddingHorizontal: 20, borderBottomLeftRadius: 34, borderBottomRightRadius: 34 }}>
           <Text style={{ fontSize: 22, fontWeight: '900', color: C.white }}>Mi Perfil</Text>
@@ -199,7 +216,6 @@ export default function ProfileScreen({
           </TouchableOpacity>
         </View>
 
-        {/* Avatar */}
         <View style={{ alignItems: 'center', marginTop: -38 }}>
           <View style={{ width: 76, height: 76, borderRadius: 38,
             backgroundColor: C.white, borderWidth: 4, borderColor: C.primaryDark,
@@ -211,7 +227,6 @@ export default function ProfileScreen({
         </View>
 
         <View style={{ paddingHorizontal: 18 }}>
-          {/* Nombre y comuna */}
           <Text style={{ textAlign: 'center', fontSize: 22, fontWeight: '900',
             color: C.dark, marginTop: 10 }}>{fullName}</Text>
           {profileDraft.commune ? (
@@ -219,7 +234,6 @@ export default function ProfileScreen({
               fontWeight: '700', marginTop: 4 }}>{profileDraft.commune}</Text>
           ) : null}
 
-          {/* Stats */}
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 16, marginBottom: 14 }}>
             {[
               { val: pets.length,  label: 'Mascotas' },
@@ -235,7 +249,6 @@ export default function ProfileScreen({
             ))}
           </View>
 
-          {/* Datos personales */}
           {loading ? (
             <ActivityIndicator color={C.primary} style={{ marginTop: 20 }} />
           ) : (
@@ -265,7 +278,6 @@ export default function ProfileScreen({
             </View>
           )}
 
-          {/* Cuenta */}
           <View style={{ backgroundColor: C.white, borderRadius: 22, padding: 16,
             paddingHorizontal: 18, borderWidth: 1, borderColor: C.border,
             flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -280,7 +292,6 @@ export default function ProfileScreen({
             </View>
           </View>
 
-          {/* Invitaciones pendientes */}
           {pendingInvitations.length > 0 && (
             <View style={{ backgroundColor: C.white, borderRadius: 22,
               borderWidth: 1, borderColor: '#FFE0A3', marginBottom: 12, overflow: 'hidden' }}>
@@ -318,7 +329,6 @@ export default function ProfileScreen({
             </View>
           )}
 
-          {/* Cerrar sesión */}
           <TouchableOpacity onPress={handleLogout} activeOpacity={0.7}
             style={{ alignItems: 'center', paddingVertical: 14 }}>
             <Text style={{ fontSize: 13, fontWeight: '700', color: C.textMuted }}>Cerrar sesión</Text>
@@ -326,7 +336,6 @@ export default function ProfileScreen({
         </View>
       </ScrollView>
 
-      {/* Navbar */}
       <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0,
         backgroundColor: C.white, borderTopWidth: 1, borderTopColor: C.border,
         flexDirection: 'row', justifyContent: 'space-around',

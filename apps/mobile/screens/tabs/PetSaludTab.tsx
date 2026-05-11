@@ -5,55 +5,76 @@ import { C } from '../../constants/colors';
 import { autoFormatDate } from '../../utils/helpers';
 import Card from '../../components/Card';
 import InfoRow from '../../components/InfoRow';
-import type { Pet, Vaccine, VetRecord, VetAttachment } from '../../types';
-
-type VaccineForm = {
-  vaccine_name: string; applied_date: string; expiry_date: string;
-  next_dose_date: string; veterinarian: string; clinic: string;
-  batch_number: string; notes: string;
-};
-type VetForm = {
-  date: string; doctor: string; clinic: string; reason: string;
-  diagnosis: string; treatment: string; description: string; attachments: VetAttachment[];
-};
-type VaccineStatusResult = { color: string; label: string };
-
-type Props = {
-  selectedPet: Pet;
-  // Vacunas
-  vaccines: Vaccine[];
-  showVaccineForm: boolean; setShowVaccineForm: (v: boolean) => void;
-  editingVaccineId: number | null; setEditingVaccineId: (id: number | null) => void;
-  vaccineForm: VaccineForm; setVaccineForm: (fn: (p: VaccineForm) => VaccineForm) => void;
-  saveVaccine: () => void; deleteVaccine: (id: number) => void;
-  resetVaccineForm: () => void; startEditVaccine: (v: Vaccine) => void;
-  vaccineStatus: (v: Vaccine) => VaccineStatusResult;
-  // Historial vet
-  vetView: 'list' | 'detail' | 'form'; setVetView: (v: 'list' | 'detail' | 'form') => void;
-  vetHistory: VetRecord[];
-  selectedVetRecord: VetRecord | null; setSelectedVetRecord: (r: VetRecord | null) => void;
-  vetForm: VetForm; setVetForm: (fn: (p: VetForm) => VetForm) => void;
-  symptomText: string; setSymptomText: (v: string) => void;
-  editingVetRecordId: string | null;
-  saveVetRecord: () => void; deleteVetRecord: () => void; resetVetForm: () => void;
-  addPhotoAttachmentToForm: () => void; addPdfAttachmentToForm: () => void;
-  renderEditableAttachmentChip: (att: VetAttachment) => React.ReactElement;
-  renderAttachmentChip: (att: VetAttachment) => React.ReactElement;
-  loading: boolean;
-};
+import type { Vaccine, VetRecord, VetAttachment } from '../../types';
+import { useAppStore } from '../../store/app';
+import { usePetsStore } from '../../store/pets';
+import { useVaccinesStore } from '../../store/vaccines';
+import { useVetStore } from '../../store/vet';
 
 type SubTab = 'vacunas' | 'historial';
 
-export default function PetSaludTab({
-  selectedPet, vaccines, showVaccineForm, setShowVaccineForm, editingVaccineId, setEditingVaccineId,
-  vaccineForm, setVaccineForm, saveVaccine, deleteVaccine, resetVaccineForm, startEditVaccine, vaccineStatus,
-  vetView, setVetView, vetHistory, selectedVetRecord, setSelectedVetRecord,
-  vetForm, setVetForm, symptomText, setSymptomText, editingVetRecordId,
-  saveVetRecord, deleteVetRecord, resetVetForm,
-  addPhotoAttachmentToForm, addPdfAttachmentToForm,
-  renderEditableAttachmentChip, renderAttachmentChip, loading,
-}: Props) {
+function vaccineStatus(v: Vaccine): { color: string; label: string } {
+  const today = new Date();
+  const ref = v.next_dose_date ?? v.expiry_date;
+  if (!ref) return { color: C.success, label: 'Al día' };
+  const d = new Date(ref);
+  if (d < today) return { color: C.danger, label: 'Vencida' };
+  const diffDays = Math.floor((d.getTime() - today.getTime()) / 86400000);
+  if (diffDays <= 30) return { color: C.warning, label: 'Próxima' };
+  return { color: C.success, label: 'Al día' };
+}
+
+export default function PetSaludTab() {
+  const loading = useAppStore((s) => s.loading);
+  const { selectedPet } = usePetsStore();
+  const {
+    vaccines, showVaccineForm, setShowVaccineForm, editingVaccineId, setEditingVaccineId,
+    vaccineForm, setVaccineForm, saveVaccine, deleteVaccine, resetVaccineForm, startEditVaccine,
+  } = useVaccinesStore();
+  const {
+    vetView, setVetView, vetHistory, selectedVetRecord, setSelectedVetRecord,
+    vetForm, setVetForm, symptomText, setSymptomText, editingVetRecordId,
+    saveVetRecord, deleteVetRecord, resetVetForm,
+    pickPhotoAttachment, pickPdfAttachment, openAttachment,
+  } = useVetStore();
+
   const [subTab, setSubTab] = React.useState<SubTab>('vacunas');
+
+  if (!selectedPet) return null;
+
+  const addPhotoAttachmentToForm = async () => {
+    const att = await pickPhotoAttachment(selectedPet.id);
+    if (att) setVetForm(p => ({ ...p, attachments: [...p.attachments, att] }));
+  };
+
+  const addPdfAttachmentToForm = async () => {
+    const att = await pickPdfAttachment(selectedPet.id);
+    if (att) setVetForm(p => ({ ...p, attachments: [...p.attachments, att] }));
+  };
+
+  const renderAttachmentChip = (att: VetAttachment): React.ReactElement => (
+    <TouchableOpacity key={att.path}
+      style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: C.surface,
+        borderRadius: 10, padding: 10, borderWidth: 1, borderColor: C.border, gap: 8 }}
+      onPress={() => openAttachment(att)} activeOpacity={0.8}>
+      <Text style={{ fontSize: 18 }}>{att.kind === 'pdf' ? '📄' : '🖼️'}</Text>
+      <Text style={{ flex: 1, fontSize: 13, color: C.text, fontWeight: '600' }} numberOfLines={1}>{att.name}</Text>
+      <Text style={{ fontSize: 12, color: C.primary, fontWeight: '700' }}>Ver</Text>
+    </TouchableOpacity>
+  );
+
+  const renderEditableAttachmentChip = (att: VetAttachment): React.ReactElement => (
+    <View key={att.path}
+      style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: C.surface,
+        borderRadius: 10, padding: 10, borderWidth: 1, borderColor: C.border, gap: 8 }}>
+      <Text style={{ fontSize: 18 }}>{att.kind === 'pdf' ? '📄' : '🖼️'}</Text>
+      <Text style={{ flex: 1, fontSize: 13, color: C.text, fontWeight: '600' }} numberOfLines={1}>{att.name}</Text>
+      <TouchableOpacity onPress={() => setVetForm(p => ({ ...p, attachments: p.attachments.filter(a => a.path !== att.path) }))}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <Text style={{ color: C.danger, fontSize: 18, fontWeight: '700' }}>×</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
   // ── Formulario vacuna ──
   if (showVaccineForm) {
@@ -95,12 +116,12 @@ export default function PetSaludTab({
             placeholderTextColor={C.textMuted} value={vaccineForm.notes}
             onChangeText={(v) => setVaccineForm(p => ({ ...p, notes: v }))} />
         </Card>
-        <TouchableOpacity style={styles.btnPrimary} onPress={saveVaccine} disabled={loading} activeOpacity={0.85}>
+        <TouchableOpacity style={styles.btnPrimary} onPress={() => saveVaccine(selectedPet.id)} disabled={loading} activeOpacity={0.85}>
           <Text style={styles.btnPrimaryText}>{loading ? 'Guardando...' : editingVaccineId ? 'Guardar cambios' : 'Registrar vacuna'}</Text>
         </TouchableOpacity>
         {editingVaccineId ? (
           <TouchableOpacity style={{ backgroundColor: C.dangerLight, borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}
-            onPress={() => deleteVaccine(editingVaccineId)} disabled={loading} activeOpacity={0.85}>
+            onPress={() => deleteVaccine(editingVaccineId, selectedPet.id)} disabled={loading} activeOpacity={0.85}>
             <Text style={{ color: C.danger, fontWeight: '700', fontSize: 15 }}>Eliminar vacuna</Text>
           </TouchableOpacity>
         ) : null}
@@ -160,12 +181,12 @@ export default function PetSaludTab({
             <View style={{ gap: 8, marginTop: 4 }}>{vetForm.attachments.map(renderEditableAttachmentChip)}</View>
           )}
         </Card>
-        <TouchableOpacity style={styles.btnPrimary} onPress={saveVetRecord} disabled={loading} activeOpacity={0.85}>
+        <TouchableOpacity style={styles.btnPrimary} onPress={() => saveVetRecord(selectedPet.id)} disabled={loading} activeOpacity={0.85}>
           <Text style={styles.btnPrimaryText}>{loading ? 'Guardando...' : editingVetRecordId ? 'Guardar cambios' : 'Guardar registro'}</Text>
         </TouchableOpacity>
         {editingVetRecordId ? (
           <TouchableOpacity style={{ backgroundColor: C.dangerLight, borderRadius: 14, paddingVertical: 14, alignItems: 'center' }}
-            onPress={deleteVetRecord} disabled={loading} activeOpacity={0.85}>
+            onPress={() => deleteVetRecord(selectedPet.id)} disabled={loading} activeOpacity={0.85}>
             <Text style={{ color: C.danger, fontWeight: '700', fontSize: 15 }}>Eliminar registro</Text>
           </TouchableOpacity>
         ) : null}
@@ -211,7 +232,6 @@ export default function PetSaludTab({
   // ── Vista principal con sub-tabs ──
   return (
     <View style={styles.form}>
-      {/* Sub-tabs Vacunas / Historial */}
       <View style={{ flexDirection: 'row', backgroundColor: C.white, borderRadius: 14, padding: 4, borderWidth: 1, borderColor: C.border, marginBottom: 14 }}>
         {(['vacunas', 'historial'] as SubTab[]).map(t => (
           <TouchableOpacity key={t} style={{ flex: 1, paddingVertical: 7, borderRadius: 10, alignItems: 'center',
