@@ -194,7 +194,7 @@ export const useVetStore = create<VetStore>((set, get) => ({
   pickPhotoAttachment: async (selectedPetId) => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) { Alert.alert('Permiso requerido', 'Necesitamos permiso para acceder a tu galería.'); return null; }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: false, quality: 0.8 });
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', allowsEditing: false, quality: 0.8 });
     if (result.canceled) return null;
     const asset = result.assets[0];
     const name = asset.fileName?.trim() || `foto-${Date.now()}.jpg`;

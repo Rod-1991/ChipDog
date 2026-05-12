@@ -6,3 +6,4 @@ export { useVetStore } from './vet';
 export { useLostPetsStore } from './lostPets';
 export { useNutritionStore } from './nutrition';
 export { useCoOwnerStore } from './coOwner';
+export { useRecognitionStore } from './recognition';

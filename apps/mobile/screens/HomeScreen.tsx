@@ -159,6 +159,17 @@ export default function HomeScreen({ handleLogout }: Props) {
                 <Text style={{ fontSize: 11, color: C.textMuted, fontWeight: '600', marginTop: 2 }}>Registrar nuevo compañero</Text>
               </TouchableOpacity>
             </View>
+            <TouchableOpacity
+              style={{ backgroundColor: '#F0F4FF', borderRadius: 18, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 14, borderWidth: 1, borderColor: '#D0D8FF' }}
+              activeOpacity={0.85}
+              onPress={() => setScreen('FindPet')}>
+              <Text style={{ fontSize: 28 }}>🔍</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '900', color: C.primaryDark }}>Buscar mascota perdida</Text>
+                <Text style={{ fontSize: 11, color: C.textMuted, fontWeight: '600', marginTop: 2 }}>Encontré una mascota sin tag — buscar por foto y ubicación</Text>
+              </View>
+              <Text style={{ fontSize: 18, color: C.primary, fontWeight: '900' }}>›</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>

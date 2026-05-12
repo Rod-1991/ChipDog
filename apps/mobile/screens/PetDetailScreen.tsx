@@ -10,13 +10,14 @@ import PetContactTab from './tabs/PetContactTab';
 import PetSaludTab from './tabs/PetSaludTab';
 import PetNutricionTab from './tabs/PetNutricionTab';
 import PetTagTab from './tabs/PetTagTab';
+import PetRecognitionTab from './tabs/PetRecognitionTab';
 import { useAppStore } from '../store/app';
 import { usePetsStore } from '../store/pets';
 import { useVaccinesStore } from '../store/vaccines';
 import { useVetStore } from '../store/vet';
 import { useUserStore } from '../store/user';
 
-type Tab = 'info' | 'contacto' | 'salud' | 'nutricion' | 'tag';
+type Tab = 'info' | 'contacto' | 'salud' | 'nutricion' | 'tag' | 'fotos';
 
 const TAB_LABELS: { key: Tab; label: string }[] = [
   { key: 'info',      label: 'Info' },
@@ -24,6 +25,7 @@ const TAB_LABELS: { key: Tab; label: string }[] = [
   { key: 'salud',     label: 'Salud' },
   { key: 'nutricion', label: 'Nutrición' },
   { key: 'tag',       label: 'Tag' },
+  { key: 'fotos',     label: 'Fotos' },
 ];
 
 function profilePct(pet: { photo_url?: string | null }, draft: PetDraft): number {
@@ -54,6 +56,7 @@ export default function PetDetailScreen() {
     salud: 'Editar salud',
     nutricion: 'Editar nutrición',
     tag: 'Tag',
+    fotos: 'Fotos de reconocimiento',
   };
 
   const isFullForm =
@@ -248,10 +251,10 @@ export default function PetDetailScreen() {
                   <TouchableOpacity onPress={() => setScreen('LostPetMap')} style={{ marginTop: 8 }}>
                     <Text style={{ color: C.primary, fontWeight: '700', fontSize: 13 }}>📍 Editar ubicación y radio</Text>
                   </TouchableOpacity>
-                  <View style={[styles.switchRow, { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.border }]}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.switchLabel}>📞  Mostrar contacto</Text>
-                      <Text style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>Visible para quienes encuentren el tag</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.border }}>
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text style={{ color: C.text, fontWeight: '700', fontSize: 15 }}>📞  Mostrar contacto</Text>
+                      <Text style={{ fontSize: 11, color: C.textMuted }}>Visible para quienes encuentren el tag</Text>
                     </View>
                     <Switch
                       value={selectedPet.contact_public ?? false}
@@ -332,6 +335,7 @@ export default function PetDetailScreen() {
             )}
           </>
         )}
+        {activeTab === 'fotos' && <PetRecognitionTab />}
 
         {selectedPet.owner_id === userId && (
           <TouchableOpacity

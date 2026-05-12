@@ -24,8 +24,8 @@ const config: ExpoConfig = {
       UIBackgroundModes: ['remote-notification'],
       NSLocationWhenInUseUsageDescription: 'ChipDog necesita tu ubicación para marcar dónde se perdió tu mascota.',
       NSLocationAlwaysAndWhenInUseUsageDescription: 'ChipDog necesita tu ubicación para marcar dónde se perdió tu mascota.',
-      NSCameraUsageDescription: 'ChipDog usa la cámara para escanear códigos QR de tags de mascotas.',
-      NSPhotoLibraryUsageDescription: 'ChipDog necesita acceso a tu galería para subir la foto de tu mascota.',
+      NSCameraUsageDescription: 'ChipDog usa la cámara para escanear códigos QR de tags y para sacar fotos de mascotas encontradas.',
+      NSPhotoLibraryUsageDescription: 'ChipDog necesita acceso a tu galería para subir fotos de mascotas.',
       NFCReaderUsageDescription: 'ChipDog usa NFC para vincular y leer tags de mascotas.'
     }
   },
@@ -33,6 +33,13 @@ const config: ExpoConfig = {
     'expo-notifications',
     'expo-location',
     'expo-camera',
+    [
+      'expo-image-picker',
+      {
+        photosPermission: 'ChipDog necesita acceso a tu galería para subir fotos de mascotas.',
+        cameraPermission: 'ChipDog usa la cámara para escanear códigos QR de tags y para sacar fotos de mascotas encontradas.',
+      }
+    ],
     ['react-native-nfc-manager', { nfcPermission: 'ChipDog necesita NFC para vincular tags a tu mascota.', includeNdefEntitlement: false }]
   ],
   extra: {

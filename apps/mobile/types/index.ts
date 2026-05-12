@@ -19,7 +19,8 @@ export type Screen =
   | 'ScanTag'
   | 'Profile'
   | 'InviteCoOwner'
-  | 'PetMembers';
+  | 'PetMembers'
+  | 'FindPet';
 
 export type PetMemberInvitation = {
   id: number;
@@ -199,3 +200,33 @@ export type PetSighting = {
 export type InfoRowProps = { label: string; value?: string | null };
 
 export type CardProps = { title?: string; accent?: string; children: any };
+
+// --- Reconocimiento de mascotas ---
+
+export type RecognitionPhoto = {
+  id: number;
+  pet_id: number;
+  storage_url: string;
+  photo_breed: string | null;
+  photo_colors: string[] | null;
+  photo_size: 'pequeño' | 'mediano' | 'grande' | null;
+  photo_markings: string | null;
+  created_at: string;
+};
+
+export type FindPetResult = {
+  pet_id: number;
+  pet_name: string;
+  species: string;
+  breed: string | null;
+  is_lost: boolean;
+  lost_since: string | null;
+  owner_phone: string | null;
+  owner_whatsapp: string | null;
+  contact_primary_name: string | null;
+  distance_km: number | null;
+  photo_url: string | null;
+  recognition_photos: RecognitionPhoto[];
+  match_score: number;
+  has_content_match: boolean;
+};

@@ -228,7 +228,7 @@ export const usePetsStore = create<PetsStore>((set, get) => ({
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) { Alert.alert('Permiso requerido', 'Necesitamos permiso para acceder a tu galería.'); return; }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, quality: 0.85, base64: true,
+      mediaTypes: 'images', allowsEditing: true, quality: 0.85, base64: true,
     });
     if (result.canceled) return;
     const asset = result.assets[0];

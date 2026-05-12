@@ -47,6 +47,7 @@ import LostPetDetailScreen from './screens/LostPetDetailScreen';
 import PetMembersScreen from './screens/PetMembersScreen';
 import InviteCoOwnerScreen from './screens/InviteCoOwnerScreen';
 import ScanTagScreen from './screens/ScanTagScreen';
+import FindPetScreen from './screens/FindPetScreen';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -223,6 +224,12 @@ export default function App() {
       case 'FoundTag':      return setScreen(isLoggedIn ? 'Home' : 'Login');
       case 'FoundResult':   return setScreen('FoundTag');
       case 'ScanTag':       return setScreen('FoundTag');
+      case 'FindPet': {
+        const { useRecognitionStore } = require('./store/recognition');
+        const recStore = useRecognitionStore.getState();
+        if (recStore.findStep === 3) { recStore.resetFind(); return; }
+        return setScreen('Home');
+      }
       default: break;
     }
   };
@@ -260,6 +267,7 @@ export default function App() {
       case 'Profile':       return 'Mi Perfil';
       case 'PetMembers':    return 'Co-dueños';
       case 'InviteCoOwner': return 'Invitar co-dueño';
+      case 'FindPet':       return 'Buscar mascota';
       default:              return 'ChipDog';
     }
   }, [screen, selectedPet, selectedLostPet]);
@@ -288,6 +296,7 @@ export default function App() {
       case 'ScanTag':       return <ScanTagScreen />;
       case 'PetMembers':    return <PetMembersScreen />;
       case 'InviteCoOwner': return <InviteCoOwnerScreen />;
+      case 'FindPet':       return <FindPetScreen />;
       default:              return null;
     }
   };
